@@ -97,6 +97,9 @@ python -m anpr.web_ui --host 127.0.0.1 --port 8110 \
   --events-base-url http://127.0.0.1:8100/api/v1
 ```
 
+> Web UI использует встроенный same-origin proxy (`/api/proxy/*`) к backend-сервисам.
+> Это устраняет CORS/`Failed to fetch` при добавлении потоков и других операциях из браузера.
+
 ### Data Layer Service (Этап 5)
 ```bash
 python3 -m anpr.data_layer --host 127.0.0.1 --port 8120

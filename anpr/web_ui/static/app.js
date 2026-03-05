@@ -8,10 +8,16 @@ async function loadConfig() {
 }
 
 async function fetchJson(url, options = {}) {
-  const response = await fetch(url, {
-    headers: { 'Content-Type': 'application/json' },
-    ...options,
-  });
+  let response;
+  try {
+    response = await fetch(url, {
+      headers: { 'Content-Type': 'application/json' },
+      ...options,
+    });
+  } catch (_error) {
+    throw new Error('backend_unreachable: проверьте запущены ли core/video/events сервисы');
+  }
+
   const data = await response.json();
   if (!response.ok) {
     throw new Error(data.error || 'request_failed');
@@ -53,8 +59,8 @@ function renderEvents(events) {
 }
 
 async function refreshChannels() {
-  const channels = await fetchJson(`${config.core_base_url}/channels`);
-  const streams = await fetchJson(`${config.video_base_url}/video/streams`);
+  const channels = await fetchJson(`/api/proxy/core/channels`);
+  const streams = await fetchJson(`/api/proxy/video/video/streams`);
   const streamMap = new Map((streams.items || []).map((item) => [item.stream_id, item.selected_profile]));
   const rows = (channels.items || []).map((item) => ({
     ...item,
@@ -64,7 +70,7 @@ async function refreshChannels() {
 }
 
 async function subscribeEvents() {
-  const payload = await fetchJson(`${config.events_base_url}/events/subscribe`, { method: 'POST' });
+  const payload = await fetchJson(`/api/proxy/events/events/subscribe`, { method: 'POST' });
   subscriberId = payload.subscriber_id;
   document.getElementById('subscriberInfo').textContent = `Подписка активна: ${subscriberId.slice(0, 8)}...`;
   if (pollTimer) {
@@ -77,7 +83,7 @@ async function pollEvents() {
   if (!subscriberId) {
     return;
   }
-  const payload = await fetchJson(`${config.events_base_url}/events/poll?subscriber_id=${subscriberId}&limit=25`);
+  const payload = await fetchJson(`/api/proxy/events/events/poll?subscriber_id=${subscriberId}&limit=25`);
   if (payload.items && payload.items.length) {
     renderEvents(payload.items);
   }
@@ -91,12 +97,12 @@ async function createChannelAndStream(formData) {
     roi: { enabled: formData.get('roi_enabled') === 'on' },
   };
 
-  await fetchJson(`${config.core_base_url}/channels`, {
+  await fetchJson(`/api/proxy/core/channels`, {
     method: 'POST',
     body: JSON.stringify(channel),
   });
 
-  await fetchJson(`${config.video_base_url}/video/streams`, {
+  await fetchJson(`/api/proxy/video/video/streams`, {
     method: 'POST',
     body: JSON.stringify({
       stream_id: channel.id,
