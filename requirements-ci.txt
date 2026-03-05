@@ -1,0 +1,4 @@
+aiosqlite
+psutil
+PyYAML
+

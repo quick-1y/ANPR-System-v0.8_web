@@ -36,6 +36,15 @@ class StabilityRunnerTests(unittest.TestCase):
         self.assertEqual(report["load"]["requests"], 5)
         self.assertEqual(report["degradation"]["ok"], True)
 
+    def test_soak_report(self) -> None:
+        suite = FakeStabilitySuite()
+        report = suite.run_soak(duration_minutes=1, interval_seconds=61, requests_per_iteration=3)
+        self.assertEqual(report["status"], "ok")
+        self.assertEqual(report["duration_minutes"], 1)
+        self.assertEqual(report["requests_per_iteration"], 3)
+        self.assertGreaterEqual(report["iterations"], 1)
+        self.assertIn("series", report)
+
 
 if __name__ == "__main__":
     unittest.main()

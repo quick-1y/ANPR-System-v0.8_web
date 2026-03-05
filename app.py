@@ -1,60 +1,29 @@
 #!/usr/bin/env python3
-# /app.py
-import sys
-import warnings
-from pathlib import Path
+from __future__ import annotations
 
-from PyQt5 import QtWidgets
+import argparse
 
-from anpr.config import Config
-from anpr.infrastructure.logging_manager import LoggingManager, get_logger
-from anpr.ui.main_window import MainWindow
-
-# Silence noisy quantization warnings emitted by torch on repeated startups.
-warnings.filterwarnings(
-    "ignore",
-    message="Please use quant_min and quant_max to specify the range for observers.",
-    module="torch.ao.quantization.observer",
-)
-warnings.filterwarnings(
-    "ignore",
-    message="must run observer before calling calculate_qparams",
-    module="torch.ao.quantization.observer",
-)
-
-logger = get_logger(__name__)
+from anpr.web_ui.server import run_server
 
 
 def main() -> None:
-    """Entrypoint that wires settings, logging and the main window."""
+    """Совместимый entrypoint: по умолчанию запускает Web UI."""
 
-    config = Config()
-    LoggingManager(config.get_logging_config())
-    logger.info("Запуск ANPR Desktop")
+    parser = argparse.ArgumentParser(description="ANPR Web UI (default entrypoint)")
+    parser.add_argument("--host", default="127.0.0.1")
+    parser.add_argument("--port", default=8110, type=int)
+    parser.add_argument("--core-base-url", default="http://127.0.0.1:8080/api/v1")
+    parser.add_argument("--video-base-url", default="http://127.0.0.1:8090/api/v1")
+    parser.add_argument("--events-base-url", default="http://127.0.0.1:8100/api/v1")
+    args = parser.parse_args()
 
-    app = QtWidgets.QApplication(sys.argv)
-    model_paths = [
-        Path("models/yolo/best.pt"),
-        Path("models/ocr_crnn/crnn_ocr_model_int8_fx.pth"),
-    ]
-    missing_paths = [path for path in model_paths if not path.exists()]
-    for path in missing_paths:
-        logger.warning("Отсутствует файл модели: %s", path)
-    if missing_paths:
-        message = (
-            "Не найдены файлы моделей:\n"
-            + "\n".join(str(path) for path in missing_paths)
-            + "\nПроверьте пути и перезапустите приложение."
-        )
-        QtWidgets.QMessageBox.critical(
-            None,
-            "Ошибка загрузки моделей",
-            message,
-        )
-        sys.exit(1)
-    window = MainWindow(config)
-    window.show()
-    sys.exit(app.exec_())
+    run_server(
+        host=args.host,
+        port=args.port,
+        core_base_url=args.core_base_url,
+        video_base_url=args.video_base_url,
+        events_base_url=args.events_base_url,
+    )
 
 
 if __name__ == "__main__":

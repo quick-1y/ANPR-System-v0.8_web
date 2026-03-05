@@ -5,9 +5,9 @@ import json
 import statistics
 import time
 import urllib.error
-import urllib.parse
 import urllib.request
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Dict, List, Sequence
 
 
@@ -50,6 +50,63 @@ class StabilitySuite:
             "health": health,
             "load": load,
             "degradation": degradation,
+            "timestamp_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        }
+
+    def run_soak(
+        self,
+        duration_minutes: int = 30,
+        interval_seconds: int = 60,
+        requests_per_iteration: int = 20,
+    ) -> Dict[str, object]:
+        duration_seconds = max(60, duration_minutes * 60)
+        sleep_seconds = max(1, interval_seconds)
+        points: List[Dict[str, object]] = []
+        started = time.time()
+        deadline = started + duration_seconds
+
+        while True:
+            point_report = self.run(requests_count=max(1, requests_per_iteration))
+            points.append(
+                {
+                    "timestamp_utc": point_report["timestamp_utc"],
+                    "status": point_report["status"],
+                    "error_rate": point_report["load"]["error_rate"],
+                    "latency_ms": point_report["load"]["latency_ms"],
+                }
+            )
+            if time.time() + sleep_seconds > deadline:
+                break
+            time.sleep(sleep_seconds)
+
+        error_rates = [float(point["error_rate"]) for point in points]
+        p95_values = [float(point["latency_ms"]["p95"]) for point in points]
+        max_values = [float(point["latency_ms"]["max"]) for point in points]
+        degraded_iterations = sum(1 for point in points if point["status"] != "ok")
+
+        return {
+            "status": "ok" if degraded_iterations == 0 else "degraded",
+            "started_at_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(started)),
+            "duration_minutes": duration_minutes,
+            "interval_seconds": interval_seconds,
+            "iterations": len(points),
+            "requests_per_iteration": requests_per_iteration,
+            "degraded_iterations": degraded_iterations,
+            "trend": {
+                "error_rate": {
+                    "avg": round(statistics.mean(error_rates), 4) if error_rates else 0.0,
+                    "max": round(max(error_rates), 4) if error_rates else 0.0,
+                },
+                "latency_p95_ms": {
+                    "avg": round(statistics.mean(p95_values), 2) if p95_values else 0.0,
+                    "max": round(max(p95_values), 2) if p95_values else 0.0,
+                },
+                "latency_max_ms": {
+                    "avg": round(statistics.mean(max_values), 2) if max_values else 0.0,
+                    "max": round(max(max_values), 2) if max_values else 0.0,
+                },
+            },
+            "series": points,
             "timestamp_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         }
 
@@ -152,11 +209,29 @@ def main() -> None:
     parser.add_argument("--video-url", default="http://127.0.0.1:8090/api/v1")
     parser.add_argument("--events-url", default="http://127.0.0.1:8100/api/v1")
     parser.add_argument("--requests", default=20, type=int)
+    parser.add_argument("--mode", choices=("suite", "soak"), default="suite")
+    parser.add_argument("--soak-minutes", default=30, type=int)
+    parser.add_argument("--soak-interval-s", default=60, type=int)
+    parser.add_argument("--soak-requests", default=20, type=int)
+    parser.add_argument("--output", default="", help="Путь для сохранения JSON-отчёта")
     args = parser.parse_args()
 
     suite = StabilitySuite(core_url=args.core_url, video_url=args.video_url, events_url=args.events_url)
-    report = suite.run(requests_count=max(1, args.requests))
-    print(json.dumps(report, ensure_ascii=False, indent=2))
+    if args.mode == "soak":
+        report = suite.run_soak(
+            duration_minutes=max(1, args.soak_minutes),
+            interval_seconds=max(1, args.soak_interval_s),
+            requests_per_iteration=max(1, args.soak_requests),
+        )
+    else:
+        report = suite.run(requests_count=max(1, args.requests))
+
+    rendered = json.dumps(report, ensure_ascii=False, indent=2)
+    if args.output:
+        output_path = Path(args.output)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(rendered + "\n", encoding="utf-8")
+    print(rendered)
 
 
 if __name__ == "__main__":

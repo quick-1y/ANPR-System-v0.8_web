@@ -1,12 +1,12 @@
 # ANPR System - Automatic Number Plate Recognition
 
 ![Python](https://img.shields.io/badge/Python-3.13-blue.svg)
-![PyQt5](https://img.shields.io/badge/GUI-PyQt5-green.svg)
+![Web UI](https://img.shields.io/badge/UI-Web-blue.svg)
 ![YOLOv8](https://img.shields.io/badge/Detection-YOLOv8-red.svg)
 ![CRNN](https://img.shields.io/badge/OCR-CRNN-orange.svg)
 ![SQLite](https://img.shields.io/badge/Database-SQLite-lightgrey.svg)
 
-Десктопное приложение для автоматического распознавания автомобильных номеров с поддержкой многоканального видео, локальной базой данных и интеллектуальной обработкой в реальном времени.
+Web-first платформа для автоматического распознавания автомобильных номеров с поддержкой многоканального видео, локальной базой данных и интеллектуальной обработкой в реальном времени.
 
 > ℹ️ Проект находится в фазе миграции на web-архитектуру.
 > - Артефакты Этапа 0 (аудит и проектирование): `docs/migration/stage0/`
@@ -31,7 +31,7 @@
 - **Валидация номеров** — постобработка, коррекция OCR-ошибок и фильтрация по форматам стран с отображением флагов
 - **Автоматическое восстановление** — переподключение при потере сигнала и плановый restart потоков
 - **Интуитивный редактор ROI** — графическое выделение зоны распознавания прямо на preview
-- **Интеллектуальный кэш UI** — пул QPixmap и LRU-кэш изображений событий с контролем потребления памяти
+- **Web UI dashboard** — единая веб-панель мониторинга каналов, событий и алертов
 - **Гибкая настройка времени** — коррекция часового пояса и смещения для корректного отображения меток времени
 - **Глобальный режим Debug** — единые переключатели оверлеев (рамки, OCR, треки), отдельный переключатель видимости метрик каналов и онлайн-панель логов в «Наблюдении», управляется отдельной вкладкой Debug в настройках
 - **Асинхронное логирование** — почасовая ротация логов в отдельной папке и автоматическая очистка по сроку хранения
@@ -69,7 +69,7 @@ pip install torch==2.8.0 torchvision==0.23.0 torchaudio==2.8.0 --index-url https
 
 ## 🎮 Быстрый старт
 
-### Графический интерфейс
+### Web UI (по умолчанию)
 ```bash
 python app.py
 ```
@@ -97,6 +97,9 @@ python -m anpr.web_ui --host 127.0.0.1 --port 8110 \
   --events-base-url http://127.0.0.1:8100/api/v1
 ```
 
+> Web UI использует встроенный same-origin proxy (`/api/proxy/*`) к backend-сервисам.
+> Это устраняет CORS/`Failed to fetch` при добавлении потоков и других операциях из браузера.
+
 ### Data Layer Service (Этап 5)
 ```bash
 python3 -m anpr.data_layer --host 127.0.0.1 --port 8120
@@ -111,8 +114,18 @@ python3 -m anpr.stability \
   --requests 50
 ```
 
+### Soak-test (30–60 минут, Этап 6)
+```bash
+python3 -m anpr.stability \
+  --mode soak \
+  --soak-minutes 30 \
+  --soak-interval-s 60 \
+  --soak-requests 30 \
+  --output reports/stability/soak_latest.json
+```
+
 ## 🧹 Завершение работы
-- Закрытие окна или выход через системное меню останавливает все фоновые `ChannelWorker`, дожидается завершения их задач и при необходимости принудительно завершает общий процессный пул инференса. Это предотвращает зависание фоновых процессов Python и рост потребления ОЗУ после закрытия приложения.
+- Для web-режима остановите backend-сервисы (`anpr.core`, `anpr.video_gateway`, `anpr.event_telemetry`, `anpr.data_layer`) и Web UI процесс. Это корректно завершит фоновые задачи и освободит ресурсы.
 
 ## 🖥️ Интерфейс приложения
 
@@ -157,9 +170,9 @@ python3 -m anpr.stability \
 
 ```
 ┌─────────────────────────────────────────────┐
-│ Presentation Layer (GUI)                    │ ← main_window.py, app.py
+│ Presentation Layer (Web UI)                 │ ← anpr/web_ui/*, app.py
 ├─────────────────────────────────────────────┤
-│ Application Layer (Coordinators)            │ ← channel_worker.py, factory.py
+│ Application Layer (Services/API)            │ ← core/video_gateway/event_telemetry/data_layer
 ├─────────────────────────────────────────────┤
 │ Domain Layer (Core Business Logic)          │ ← anpr_pipeline.py (включая TrackAggregator)
 ├─────────────────────────────────────────────┤
@@ -299,9 +312,19 @@ flowchart TD
 ```
 ANPR-System-v0.8/
 ├── .gitignore                # Шаблон игнорирования временных файлов и артефактов
-├── app.py                    # Точка входа (GUI)
+├── app.py                    # Точка входа (по умолчанию запускает Web UI)
 ├── requirements.txt          # Зависимости Python
 ├── settings.json             # Конфигурация приложения (автоматически создаётся; каналы, ROI, фильтры)
+├── .github/                  # CI/CD пайплайны
+│   └── workflows/
+│       ├── stability-gate.yml        # Обязательный stability gate перед релизом
+│       └── stability-soak-trends.yml # Длительный soak-test и обновление трендов
+├── scripts/                  # Служебные скрипты автоматизации
+│   └── update_stability_trend.py     # Обновление history + markdown отчёта по трендам
+├── reports/                  # Персистентные отчёты стабильности
+│   └── stability/
+│       ├── soak_history.jsonl        # История прогонов soak-test
+│       └── soak_trends.md            # Человекочитаемый отчёт по latency/error-rate
 │
 ├── docs/                     # Документация по миграции и архитектурным этапам
 │   └── migration/
@@ -387,7 +410,7 @@ ANPR-System-v0.8/
     ├── stability/            # Набор проверок стабильности (Этап 6)
     │   ├── __init__.py
     │   ├── __main__.py       # CLI-запуск Stability Suite
-    │   └── runner.py         # Smoke/load/degradation probes + отчёт
+    │   └── runner.py         # Smoke/load/degradation + soak probes и отчёты
     │
     ├── infrastructure/       # Инфраструктурный слой
     │   ├── __init__.py
@@ -428,36 +451,6 @@ ANPR-System-v0.8/
     │   ├── __init__.py
     │   ├── crnn.py           # Архитектура CRNN модели
     │   └── crnn_recognizer.py # Обёртка для загрузки и инференса квантованной модели
-    │
-    ├── ui/                   # Пользовательский интерфейс
-    │   ├── __init__.py
-    │   ├── main_window.py    # Оркестрация UI и делегирование в builders/presenters/services
-    │   ├── builders/         # Сборка tab/layout-блоков главного окна
-    │   │   ├── main_layout_builder.py
-    │   │   └── tabs_builder.py
-    │   ├── dialogs/          # Диалоги добавления/редактирования и глобальные настройки UI
-    │   ├── models/           # ViewModel и Qt-модели таблиц UI-слоя
-    │   ├── presenters/       # Подготовка данных для отображения и форматирование
-    │   │   └── main_window_presenter.py
-    │   ├── services/         # Сервисы UI-слоя
-    │   │   ├── channel_actions_service.py
-    │   │   ├── image_cache_service.py
-    │   │   └── ui_logging_service.py
-    │   ├── theme/            # Палитры и style-утилиты
-    │   │   └── palettes.py
-    │   └── widgets/          # Переиспользуемые виджеты каналов, ROI и карточки события
-    │       ├── channel_view.py
-    │       ├── roi_editor.py
-    │       └── event_details_panel.py
-    │
-    └── workers/              # Фоновые процессы
-        ├── __init__.py
-        ├── channel_worker.py         # Оркестрация жизненного цикла канала
-        ├── frame_source.py           # Подключение/чтение видеопотока и retry-логика
-        ├── inference_scheduler.py    # Планирование инференса (stride/shared memory)
-        ├── track_lifecycle_service.py # Сервис истории треков и отрисовки направлений
-        ├── event_emit_service.py     # Сервис записи и эмита событий в UI
-        └── types.py                  # TypedDict/dataclass контракты воркера
 ```
 
 ## 🛠️ Разработка
@@ -485,12 +478,11 @@ ANPR-System-v0.8/
 ### Ключевые оптимизации
 - **Адаптивный инференс** — шаг обработки кадров (`frame_stride`) для снижения нагрузки на CPU/GPU
 - **Консенсусное распознавание** — голосование по нескольким кадрам трека для надёжности
-- **Подавление повторов** — таймер кулдауна в `ANPRPipeline` с единым кэшем на канал внутри процесса инференса; UI-воркер не добавляет дополнительный слой подавления
+- **Подавление повторов** — таймер кулдауна в `ANPRPipeline` с единым кэшем на канал внутри процесса инференса
 - **Батчевый OCR** — группировка кропов номеров в батчи для ускорения инференса CRNN
-- **Пул QPixmap и LRU-кэш** — повторное использование буферов отрисовки и умное управление памятью для изображений событий (`anpr/ui/services/image_cache_service.py`)
-- **Qt-мост логирования UI** — безопасная доставка сообщений логов в UI-поток через `LogSignalEmitter` и `QtLogHandler` (`anpr/ui/services/ui_logging_service.py`)
+- **Лёгкий Web UI runtime** — статика и runtime-конфиг endpoint-ов без desktop-зависимостей (`anpr/web_ui/server.py`)
 - **Process Pool для OCR** — изоляция загрузки моделей и инференса в отдельных процессах для стабильности
-- **Инфраструктура без зависимостей от UI** — `EventWriter` отвечает только за сохранение скриншотов и запись в БД, а формирование `QImage` для интерфейса происходит в `ChannelWorker`.
+- **Инфраструктура без desktop-зависимостей** — сервисы данных и телеметрии полностью работают через HTTP API и файловые/БД адаптеры.
 - **Настройки детектора передаются явно** — порог уверенности YOLO задаётся при создании детектора из конфигурации, без обращения к глобальному синглтону.
 
 ## 🔍 Поиск и фильтрация (Вкладка "Журнал")

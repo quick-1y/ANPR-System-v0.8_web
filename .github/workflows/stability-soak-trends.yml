@@ -1,0 +1,88 @@
+name: Stability Soak Trends
+
+on:
+  schedule:
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+    inputs:
+      soak_minutes:
+        description: 'Продолжительность soak-теста (30-60 минут)'
+        required: false
+        default: '30'
+
+jobs:
+  soak-test-and-trends:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-ci.txt
+
+      - name: Start API services
+        run: |
+          python -m anpr.core --host 127.0.0.1 --port 8080 > core.log 2>&1 &
+          python -m anpr.video_gateway --host 127.0.0.1 --port 8090 > video.log 2>&1 &
+          python -m anpr.event_telemetry --host 127.0.0.1 --port 8100 > events.log 2>&1 &
+
+      - name: Wait for health endpoints
+        run: |
+          for i in {1..40}; do
+            if curl -fsS http://127.0.0.1:8080/api/v1/health >/dev/null \
+              && curl -fsS http://127.0.0.1:8090/api/v1/video/health >/dev/null \
+              && curl -fsS http://127.0.0.1:8100/api/v1/events/health >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          exit 1
+
+      - name: Run soak test
+        run: |
+          SOAK_MINUTES="${{ github.event.inputs.soak_minutes || '30' }}"
+          python -m anpr.stability \
+            --mode soak \
+            --soak-minutes "$SOAK_MINUTES" \
+            --soak-interval-s 60 \
+            --soak-requests 30 \
+            --output reports/stability/soak_latest.json
+
+      - name: Update trend reports
+        run: |
+          python scripts/update_stability_trend.py --report reports/stability/soak_latest.json
+
+      - name: Upload soak artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stability-soak-artifacts
+          path: |
+            reports/stability/soak_latest.json
+            reports/stability/soak_history.jsonl
+            reports/stability/soak_trends.md
+            core.log
+            video.log
+            events.log
+
+      - name: Commit persistent trend reports
+        if: github.event_name != 'pull_request'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add reports/stability/soak_history.jsonl reports/stability/soak_trends.md
+          git diff --cached --quiet && exit 0
+          git commit -m "chore(ci): обновить тренды soak stability"
+          git push
