@@ -1,7 +1,7 @@
 # ANPR System - Automatic Number Plate Recognition
 
 ![Python](https://img.shields.io/badge/Python-3.13-blue.svg)
-![PyQt5](https://img.shields.io/badge/GUI-PyQt5-green.svg)
+![PyQt6](https://img.shields.io/badge/GUI-PyQt6-green.svg)
 ![YOLOv8](https://img.shields.io/badge/Detection-YOLOv8-red.svg)
 ![CRNN](https://img.shields.io/badge/OCR-CRNN-orange.svg)
 ![SQLite](https://img.shields.io/badge/Database-SQLite-lightgrey.svg)

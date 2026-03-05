@@ -4,7 +4,7 @@ from typing import Callable
 import time
 
 import cv2
-from PyQt5 import QtGui
+from PyQt6 import QtGui
 
 from anpr.infrastructure.event_writer import EventWriter
 
@@ -23,7 +23,7 @@ class EventEmitService:
         rgb_frame = frame if is_rgb else cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         height, width, channels = rgb_frame.shape
         bytes_per_line = channels * width
-        return QtGui.QImage(rgb_frame.data, width, height, bytes_per_line, QtGui.QImage.Format_RGB888).copy()
+        return QtGui.QImage(rgb_frame.data, width, height, bytes_per_line, QtGui.QImage.Format.Format_RGB888).copy()
 
     async def persist_and_emit(self, source: str, results: list[dict], channel_name: str, frame, rgb_frame) -> dict:
         started = time.monotonic()

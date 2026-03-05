@@ -3,7 +3,7 @@ torchvision==0.23.0
 torchaudio==2.8.0
 ultralytics==8.3.20
 opencv-python
-PyQt5
+PyQt6
 aiosqlite
 psutil
 PyYAML

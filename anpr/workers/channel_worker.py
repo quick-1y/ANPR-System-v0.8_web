@@ -17,7 +17,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import cv2
 import numpy as np
-from PyQt5 import QtCore, QtGui
+from PyQt6 import QtCore, QtGui
 
 from anpr.detection.motion_detector import MotionDetectorConfig
 from anpr.infrastructure.event_writer import EventWriter
@@ -629,7 +629,7 @@ class ChannelWorker(QtCore.QThread):
         bytes_per_line = channels * width
 
         return QtGui.QImage(
-            rgb_frame.data, width, height, bytes_per_line, QtGui.QImage.Format_RGB888
+            rgb_frame.data, width, height, bytes_per_line, QtGui.QImage.Format.Format_RGB888
         ).copy()
 
     def _update_metrics(self, now: float) -> None:
@@ -892,7 +892,7 @@ class ChannelWorker(QtCore.QThread):
             height, width, channel = display_frame.shape
             bytes_per_line = 3 * width
             q_image = QtGui.QImage(
-                display_frame.data, width, height, bytes_per_line, QtGui.QImage.Format_RGB888
+                display_frame.data, width, height, bytes_per_line, QtGui.QImage.Format.Format_RGB888
             ).copy()
 
             self.frame_ready.emit(channel_name, q_image)

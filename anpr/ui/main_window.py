@@ -12,7 +12,7 @@ import torch
 from collections import OrderedDict, deque
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
-from PyQt5 import QtCore, QtGui, QtWidgets
+from PyQt6 import QtCore, QtGui, QtWidgets
 from zoneinfo import ZoneInfo
 
 from anpr.config import Config
@@ -101,15 +101,15 @@ class ChannelView(QtWidgets.QWidget):
         self._grid_position: int = -1
         self._drag_start_pos: Optional[QtCore.QPoint] = None
         self.setAcceptDrops(True)
-        self.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
+        self.setSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Expanding)
 
         self._colors: Dict[str, str] = colors or {}
         self.video_label = QtWidgets.QLabel("Нет сигнала")
-        self.video_label.setAlignment(QtCore.Qt.AlignCenter)
+        self.video_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
         self.video_label.setMinimumSize(220, 170)
         self.video_label.setScaledContents(False)
         self.video_label.setSizePolicy(
-            QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding
+            QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Expanding
         )
 
         layout = QtWidgets.QVBoxLayout(self)
@@ -118,31 +118,31 @@ class ChannelView(QtWidgets.QWidget):
 
         self.motion_indicator = QtWidgets.QLabel("Движение")
         self.motion_indicator.setParent(self.video_label)
-        self.motion_indicator.setAttribute(QtCore.Qt.WA_TransparentForMouseEvents)
+        self.motion_indicator.setAttribute(QtCore.Qt.WidgetAttribute.WA_TransparentForMouseEvents)
         self.motion_indicator.hide()
 
         self.last_plate = QtWidgets.QLabel("—")
         self.last_plate.setParent(self.video_label)
-        self.last_plate.setAttribute(QtCore.Qt.WA_TransparentForMouseEvents)
+        self.last_plate.setAttribute(QtCore.Qt.WidgetAttribute.WA_TransparentForMouseEvents)
         self.last_plate.hide()
 
         self.status_hint = QtWidgets.QLabel("")
         self.status_hint.setParent(self.video_label)
-        self.status_hint.setAttribute(QtCore.Qt.WA_TransparentForMouseEvents)
+        self.status_hint.setAttribute(QtCore.Qt.WidgetAttribute.WA_TransparentForMouseEvents)
         self.status_hint.hide()
 
         self.camera_metrics_hint = QtWidgets.QLabel("")
         self.camera_metrics_hint.setParent(self.video_label)
-        self.camera_metrics_hint.setAttribute(QtCore.Qt.WA_TransparentForMouseEvents)
+        self.camera_metrics_hint.setAttribute(QtCore.Qt.WidgetAttribute.WA_TransparentForMouseEvents)
         self.camera_metrics_hint.setWordWrap(True)
-        self.camera_metrics_hint.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+        self.camera_metrics_hint.setAlignment(QtCore.Qt.AlignmentFlag.AlignLeft | QtCore.Qt.AlignmentFlag.AlignVCenter)
         self.camera_metrics_hint.hide()
 
         self.metrics_hint = QtWidgets.QLabel("")
         self.metrics_hint.setParent(self.video_label)
-        self.metrics_hint.setAttribute(QtCore.Qt.WA_TransparentForMouseEvents)
+        self.metrics_hint.setAttribute(QtCore.Qt.WidgetAttribute.WA_TransparentForMouseEvents)
         self.metrics_hint.setWordWrap(True)
-        self.metrics_hint.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+        self.metrics_hint.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignVCenter)
         self.metrics_hint.hide()
 
         self._metrics_enabled = True
@@ -220,14 +220,14 @@ class ChannelView(QtWidgets.QWidget):
         )
 
     def mousePressEvent(self, event: QtGui.QMouseEvent) -> None:  # noqa: N802
-        if event.button() == QtCore.Qt.LeftButton:
+        if event.button() == QtCore.Qt.MouseButton.LeftButton:
             self._drag_start_pos = event.pos()
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event: QtGui.QMouseEvent) -> None:  # noqa: N802
         if (
             self._channel_name
-            and event.buttons() & QtCore.Qt.LeftButton
+            and event.buttons() & QtCore.Qt.MouseButton.LeftButton
             and self._drag_start_pos
             and (event.pos() - self._drag_start_pos).manhattanLength()
             >= QtWidgets.QApplication.startDragDistance()
@@ -238,7 +238,7 @@ class ChannelView(QtWidgets.QWidget):
             mime_data.setText(self._channel_name)
             mime_data.setData("application/x-channel-index", str(self._grid_position).encode())
             drag.setMimeData(mime_data)
-            drag.exec_(QtCore.Qt.MoveAction)
+            drag.exec(QtCore.Qt.DropAction.MoveAction)
             self.dragFinished.emit()
             return
         super().mouseMoveEvent(event)
@@ -268,7 +268,7 @@ class ChannelView(QtWidgets.QWidget):
         event.acceptProposedAction()
 
     def mouseDoubleClickEvent(self, event: QtGui.QMouseEvent) -> None:  # noqa: N802
-        if event.button() == QtCore.Qt.LeftButton and self._channel_name:
+        if event.button() == QtCore.Qt.MouseButton.LeftButton and self._channel_name:
             self.channelActivated.emit(self._channel_name)
             event.accept()
             return
@@ -346,7 +346,7 @@ class ROIEditor(QtWidgets.QLabel):
 
     def __init__(self) -> None:
         super().__init__("Нет кадра")
-        self.setAlignment(QtCore.Qt.AlignCenter)
+        self.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
         self.setMinimumSize(400, 260)
         self.set_theme(MainWindow.THEME_PALETTES["dark"])
         self._pixmap: Optional[QtGui.QPixmap] = None
@@ -525,7 +525,7 @@ class ROIEditor(QtWidgets.QLabel):
     def _scaled_pixmap(self, size: QtCore.QSize) -> QtGui.QPixmap:
         assert self._pixmap is not None
         return self._pixmap.scaled(
-            size, QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation
+            size, QtCore.Qt.AspectRatioMode.KeepAspectRatio, QtCore.Qt.TransformationMode.SmoothTransformation
         )
 
     def _image_geometry(self) -> Optional[Tuple[QtCore.QPoint, QtCore.QSize]]:
@@ -591,7 +591,7 @@ class ROIEditor(QtWidgets.QLabel):
             return
         _, scaled_size = geom
         painter = QtGui.QPainter(self)
-        painter.setRenderHint(QtGui.QPainter.Antialiasing)
+        painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
 
         # ROI отрисовываем поверх, чтобы рамка выбора не закрывала границы полигона
 
@@ -630,7 +630,7 @@ class ROIEditor(QtWidgets.QLabel):
             painter.setPen(QtGui.QPen(QtGui.QColor(210, 210, 210)))
             painter.drawText(
                 self.rect().adjusted(10, 10, -10, -10),
-                QtCore.Qt.AlignLeft | QtCore.Qt.AlignTop,
+                QtCore.Qt.AlignmentFlag.AlignLeft | QtCore.Qt.AlignmentFlag.AlignTop,
                 "ROI отключена — поиск по всему кадру",
             )
 
@@ -646,7 +646,7 @@ class ROIEditor(QtWidgets.QLabel):
                 widget_rect = QtCore.QRectF(top_left, bottom_right).normalized()
                 pen = QtGui.QPen(color)
                 pen.setWidth(2)
-                pen.setStyle(QtCore.Qt.DashLine)
+                pen.setStyle(QtCore.Qt.PenStyle.DashLine)
                 painter.setPen(pen)
                 painter.setBrush(QtGui.QColor(color.red(), color.green(), color.blue(), 40))
                 painter.drawRect(widget_rect)
@@ -671,7 +671,7 @@ class ROIEditor(QtWidgets.QLabel):
                     text_rect.height(),
                 )
                 painter.setPen(QtGui.QPen(color))
-                painter.drawText(label_rect, QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter, label)
+                painter.drawText(label_rect, QtCore.Qt.AlignmentFlag.AlignLeft | QtCore.Qt.AlignmentFlag.AlignVCenter, label)
 
     def _emit_roi(self) -> None:
         roi = {
@@ -740,7 +740,7 @@ class ROIEditor(QtWidgets.QLabel):
         return None
 
     def mousePressEvent(self, event: QtGui.QMouseEvent) -> None:  # noqa: N802
-        if event.button() != QtCore.Qt.LeftButton:
+        if event.button() != QtCore.Qt.MouseButton.LeftButton:
             return
 
         size_handle = self._size_handle_at(event.pos()) if self._size_overlay_enabled else None
@@ -834,7 +834,7 @@ class ROIEditor(QtWidgets.QLabel):
         self._drag_index = None
 
     def mouseDoubleClickEvent(self, event: QtGui.QMouseEvent) -> None:  # noqa: N802
-        if event.button() != QtCore.Qt.LeftButton:
+        if event.button() != QtCore.Qt.MouseButton.LeftButton:
             return
 
         img_pos = self._widget_to_image(event.pos())
@@ -928,7 +928,7 @@ class EventDetailView(QtWidgets.QWidget):
         group = QtWidgets.QGroupBox(title)
         wrapper = QtWidgets.QVBoxLayout(group)
         label = QtWidgets.QLabel("Нет изображения")
-        label.setAlignment(QtCore.Qt.AlignCenter)
+        label.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
         if min_size:
             label.setMinimumSize(min_size)
         else:
@@ -938,7 +938,7 @@ class EventDetailView(QtWidgets.QWidget):
         )
         label.setScaledContents(not keep_aspect)
         label.setSizePolicy(
-            QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding
+            QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Expanding
         )
         wrapper.addWidget(label)
         group.display_label = label  # type: ignore[attr-defined]
@@ -1019,10 +1019,10 @@ class EventDetailView(QtWidgets.QWidget):
         pixmap = QtGui.QPixmap.fromImage(image)
         if keep_aspect:
             pixmap = pixmap.scaled(
-                target_size, QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation
+                target_size, QtCore.Qt.AspectRatioMode.KeepAspectRatio, QtCore.Qt.TransformationMode.SmoothTransformation
             )
         else:
-            pixmap = pixmap.scaled(target_size, QtCore.Qt.IgnoreAspectRatio, QtCore.Qt.SmoothTransformation)
+            pixmap = pixmap.scaled(target_size, QtCore.Qt.AspectRatioMode.IgnoreAspectRatio, QtCore.Qt.TransformationMode.SmoothTransformation)
         label.setPixmap(pixmap)
 
     def resizeEvent(self, event: QtGui.QResizeEvent) -> None:  # noqa: N802
@@ -1096,9 +1096,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.move(self._top_left)
         self.setWindowFlags(
             self.windowFlags()
-            | QtCore.Qt.FramelessWindowHint
-            | QtCore.Qt.WindowSystemMenuHint
-            | QtCore.Qt.WindowMinMaxButtonsHint
+            | QtCore.Qt.WindowType.FramelessWindowHint
+            | QtCore.Qt.WindowType.WindowSystemMenuHint
+            | QtCore.Qt.WindowType.WindowMinMaxButtonsHint
         )
         self._window_drag_pos: Optional[QtCore.QPoint] = None
 
@@ -1355,13 +1355,13 @@ class MainWindow(QtWidgets.QMainWindow):
         layout.addWidget(close_btn)
 
         def start_move(event: QtGui.QMouseEvent) -> None:  # type: ignore[override]
-            if event.button() == QtCore.Qt.LeftButton and not self.isFullScreen():
+            if event.button() == QtCore.Qt.MouseButton.LeftButton and not self.isFullScreen():
                 self._window_drag_pos = event.globalPos() - self.frameGeometry().topLeft()
                 event.accept()
 
         def move_window(event: QtGui.QMouseEvent) -> None:  # type: ignore[override]
             if (
-                event.buttons() & QtCore.Qt.LeftButton
+                event.buttons() & QtCore.Qt.MouseButton.LeftButton
                 and self._window_drag_pos is not None
                 and not self.isFullScreen()
             ):
@@ -1373,7 +1373,7 @@ class MainWindow(QtWidgets.QMainWindow):
             event.accept()
 
         def double_click(event: QtGui.QMouseEvent) -> None:  # type: ignore[override]
-            if event.button() == QtCore.Qt.LeftButton:
+            if event.button() == QtCore.Qt.MouseButton.LeftButton:
                 toggle_maximize()
                 event.accept()
 
@@ -1437,7 +1437,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._log_history.append(message)
         if getattr(self, "log_group", None) and self.log_group.isVisible():
             self.log_view.append(message)
-            self.log_view.moveCursor(QtGui.QTextCursor.End)
+            self.log_view.moveCursor(QtGui.QTextCursor.MoveOperation.End)
 
     def _refresh_log_view(self) -> None:
         if not getattr(self, "log_view", None):
@@ -1445,7 +1445,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.log_view.clear()
         for line in self._log_history:
             self.log_view.append(line)
-        self.log_view.moveCursor(QtGui.QTextCursor.End)
+        self.log_view.moveCursor(QtGui.QTextCursor.MoveOperation.End)
 
     # ------------------ Наблюдение ------------------
     def _build_observation_tab(self) -> QtWidgets.QWidget:
@@ -1467,9 +1467,9 @@ class MainWindow(QtWidgets.QMainWindow):
         chooser_layout.addWidget(chooser_label)
         self.grid_combo = QtWidgets.QComboBox()
         self.grid_combo.setSizePolicy(
-            QtWidgets.QSizePolicy.Minimum, QtWidgets.QSizePolicy.Fixed
+            QtWidgets.QSizePolicy.Policy.Minimum, QtWidgets.QSizePolicy.Policy.Fixed
         )
-        self.grid_combo.setSizeAdjustPolicy(QtWidgets.QComboBox.AdjustToContents)
+        self.grid_combo.setSizeAdjustPolicy(QtWidgets.QComboBox.SizeAdjustPolicy.AdjustToContents)
         self._style_combo(self.grid_combo, rounded=True)
         for variant in self.GRID_VARIANTS:
             self.grid_combo.addItem(variant.replace("x", "х"), variant)
@@ -1489,7 +1489,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.grid_widget = QtWidgets.QWidget()
         self.grid_layout = QtWidgets.QGridLayout(self.grid_widget)
         self.grid_widget.setSizePolicy(
-            QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding
+            QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Expanding
         )
         self.grid_layout.setSpacing(6)
         self.grid_layout.setContentsMargins(0, 0, 0, 0)
@@ -1503,7 +1503,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.log_view = QtWidgets.QTextEdit()
         self.log_view.setReadOnly(True)
         self.log_view.setMinimumHeight(160)
-        self.log_view.setLineWrapMode(QtWidgets.QTextEdit.NoWrap)
+        self.log_view.setLineWrapMode(QtWidgets.QTextEdit.LineWrapMode.NoWrap)
         self._apply_stylesheet(
             self.log_view,
             lambda: (
@@ -1540,16 +1540,16 @@ class MainWindow(QtWidgets.QMainWindow):
         self._apply_stylesheet(self.events_table, lambda: self.table_style)
         header = self.events_table.horizontalHeader()
         header.setMinimumSectionSize(80)
-        header.setSectionResizeMode(QtWidgets.QHeaderView.Interactive)
+        header.setSectionResizeMode(QtWidgets.QHeaderView.ResizeMode.Interactive)
         header.setStretchLastSection(False)
         self.events_table.setColumnWidth(0, 190)
         self.events_table.setColumnWidth(1, 130)
         self.events_table.setColumnWidth(2, 90)
         self.events_table.setColumnWidth(3, 140)
         self.events_table.setColumnWidth(4, 130)
-        self.events_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
-        self.events_table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
-        self.events_table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+        self.events_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectionBehavior.SelectRows)
+        self.events_table.setSelectionMode(QtWidgets.QAbstractItemView.SelectionMode.SingleSelection)
+        self.events_table.setEditTriggers(QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers)
         self.events_table.verticalHeader().setVisible(False)
         self.events_table.itemSelectionChanged.connect(self._on_event_selected)
         events_layout.addWidget(self.events_table)
@@ -1575,7 +1575,7 @@ class MainWindow(QtWidgets.QMainWindow):
         rail_layout = QtWidgets.QVBoxLayout(toggle_rail)
         rail_layout.setContentsMargins(0, 0, 0, 0)
         rail_layout.addStretch()
-        rail_layout.addWidget(toggle_details_btn, 0, QtCore.Qt.AlignCenter)
+        rail_layout.addWidget(toggle_details_btn, 0, QtCore.Qt.AlignmentFlag.AlignCenter)
         rail_layout.addStretch()
 
         details_content = QtWidgets.QWidget()
@@ -1619,8 +1619,8 @@ class MainWindow(QtWidgets.QMainWindow):
     def _build_debug_settings_tab(self) -> QtWidgets.QWidget:
         scroll = QtWidgets.QScrollArea()
         scroll.setWidgetResizable(True)
-        scroll.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
-        scroll.setFrameShape(QtWidgets.QFrame.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setFrameShape(QtWidgets.QFrame.Shape.NoFrame)
         self._apply_stylesheet(
             scroll,
             lambda: (
@@ -1685,7 +1685,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._register_theme_setter(apply_style)
         button.setMinimumWidth(min_width)
         button.setMinimumHeight(MainWindow.BUTTON_HEIGHT)
-        button.setSizePolicy(QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Fixed)
+        button.setSizePolicy(QtWidgets.QSizePolicy.Policy.Fixed, QtWidgets.QSizePolicy.Policy.Fixed)
 
     def _style_channel_tool_button(self, button: QtWidgets.QToolButton) -> None:
         def apply_style() -> None:
@@ -1697,12 +1697,12 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self._register_theme_setter(apply_style)
         button.setAutoRaise(False)
-        button.setCursor(QtCore.Qt.PointingHandCursor)
+        button.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
 
     @staticmethod
     def _tune_form_layout(form: QtWidgets.QFormLayout) -> None:
-        form.setLabelAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
-        form.setFormAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignTop)
+        form.setLabelAlignment(QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignVCenter)
+        form.setFormAlignment(QtCore.Qt.AlignmentFlag.AlignLeft | QtCore.Qt.AlignmentFlag.AlignTop)
         form.setHorizontalSpacing(16)
         form.setVerticalSpacing(12)
 
@@ -1770,7 +1770,7 @@ class MainWindow(QtWidgets.QMainWindow):
     def _get_datetime_value(widget: QtWidgets.QDateTimeEdit) -> Optional[str]:
         if widget.dateTime() == widget.minimumDateTime():
             return None
-        return widget.dateTime().toString(QtCore.Qt.ISODate)
+        return widget.dateTime().toString(QtCore.Qt.DateFormat.ISODate)
 
     @staticmethod
     def _format_timestamp(value: str, target_zone: Optional[ZoneInfo], offset_minutes: int) -> str:
@@ -2145,8 +2145,8 @@ class MainWindow(QtWidgets.QMainWindow):
     def _update_frame(self, channel_name: str, image: QtGui.QImage) -> None:
         cached_preview = image.scaled(
             QtCore.QSize(960, 540),
-            QtCore.Qt.KeepAspectRatio,
-            QtCore.Qt.SmoothTransformation,
+            QtCore.Qt.AspectRatioMode.KeepAspectRatio,
+            QtCore.Qt.TransformationMode.SmoothTransformation,
         )
         self._latest_frames[channel_name] = cached_preview
         if self._skip_frame_updates:
@@ -2159,7 +2159,7 @@ class MainWindow(QtWidgets.QMainWindow):
             return
 
         scaled_image = image.scaled(
-            target_size, QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation
+            target_size, QtCore.Qt.AspectRatioMode.KeepAspectRatio, QtCore.Qt.TransformationMode.SmoothTransformation
         )
         label.set_pixmap(QtGui.QPixmap.fromImage(scaled_image))
 
@@ -2173,7 +2173,7 @@ class MainWindow(QtWidgets.QMainWindow):
         rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         height, width, _ = rgb.shape
         bytes_per_line = 3 * width
-        return QtGui.QImage(rgb.data, width, height, bytes_per_line, QtGui.QImage.Format_RGB888).copy()
+        return QtGui.QImage(rgb.data, width, height, bytes_per_line, QtGui.QImage.Format.Format_RGB888).copy()
 
     @staticmethod
     def _image_weight(images: Tuple[Optional[QtGui.QImage], Optional[QtGui.QImage]]) -> int:
@@ -2325,15 +2325,15 @@ class MainWindow(QtWidgets.QMainWindow):
         direction = self._format_direction(event.get("direction"))
 
         id_item = QtWidgets.QTableWidgetItem(timestamp)
-        id_item.setData(QtCore.Qt.UserRole, event_id)
+        id_item.setData(QtCore.Qt.ItemDataRole.UserRole, event_id)
         self.events_table.setItem(row_index, 0, id_item)
         self.events_table.setItem(row_index, 1, QtWidgets.QTableWidgetItem(plate))
         country_item = QtWidgets.QTableWidgetItem("")
-        country_item.setData(QtCore.Qt.UserRole, country_code)
-        country_item.setData(QtCore.Qt.TextAlignmentRole, QtCore.Qt.AlignCenter)
+        country_item.setData(QtCore.Qt.ItemDataRole.UserRole, country_code)
+        country_item.setData(QtCore.Qt.ItemDataRole.TextAlignmentRole, QtCore.Qt.AlignmentFlag.AlignCenter)
         country_icon = self._get_flag_icon(event.get("country"))
         if country_icon:
-            country_item.setData(QtCore.Qt.DecorationRole, country_icon)
+            country_item.setData(QtCore.Qt.ItemDataRole.DecorationRole, country_icon)
         country_name = self._get_country_name(country_code)
         if country_name != "—":
             country_item.setToolTip(country_name)
@@ -2345,7 +2345,7 @@ class MainWindow(QtWidgets.QMainWindow):
         while self.events_table.rowCount() > max_rows:
             last_row = self.events_table.rowCount() - 1
             item = self.events_table.item(last_row, 0)
-            event_id = int(item.data(QtCore.Qt.UserRole) or 0) if item else 0
+            event_id = int(item.data(QtCore.Qt.ItemDataRole.UserRole) or 0) if item else 0
             self.events_table.removeRow(last_row)
             if event_id and event_id in self.event_cache:
                 self.event_cache.pop(event_id, None)
@@ -2370,7 +2370,7 @@ class MainWindow(QtWidgets.QMainWindow):
         event_id_item = self.events_table.item(row, 0)
         if event_id_item is None:
             return
-        event_id = int(event_id_item.data(QtCore.Qt.UserRole) or 0)
+        event_id = int(event_id_item.data(QtCore.Qt.ItemDataRole.UserRole) or 0)
         self._show_event_details(event_id)
 
     def _show_event_details(self, event_id: int) -> None:
@@ -2408,7 +2408,7 @@ class MainWindow(QtWidgets.QMainWindow):
         if select_id:
             for row in range(self.events_table.rowCount()):
                 item = self.events_table.item(row, 0)
-                if item and int(item.data(QtCore.Qt.UserRole) or 0) == select_id:
+                if item and int(item.data(QtCore.Qt.ItemDataRole.UserRole) or 0) == select_id:
                     self.events_table.selectRow(row)
                     break
 
@@ -2424,14 +2424,14 @@ class MainWindow(QtWidgets.QMainWindow):
         filters_group = QtWidgets.QGroupBox("Фильтры поиска")
         self._apply_stylesheet(filters_group, lambda: self.group_box_style)
         form = QtWidgets.QFormLayout(filters_group)
-        form.setFieldGrowthPolicy(QtWidgets.QFormLayout.AllNonFixedFieldsGrow)
+        form.setFieldGrowthPolicy(QtWidgets.QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
         metrics = self.fontMetrics()
         input_width = metrics.horizontalAdvance("00.00.0000 00:00:00") + 40
 
         self.search_plate = QtWidgets.QLineEdit()
         self.search_plate.setMinimumWidth(input_width)
         self.search_plate.setSizePolicy(
-            QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.Fixed
+            QtWidgets.QSizePolicy.Policy.Preferred, QtWidgets.QSizePolicy.Policy.Fixed
         )
         self.search_from = QtWidgets.QDateTimeEdit()
         self._prepare_optional_datetime(self.search_from)
@@ -2439,7 +2439,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._register_theme_setter(lambda: self._apply_calendar_style(self.search_from))
         self.search_from.setMinimumWidth(input_width)
         self.search_from.setSizePolicy(
-            QtWidgets.QSizePolicy.MinimumExpanding, QtWidgets.QSizePolicy.Fixed
+            QtWidgets.QSizePolicy.Policy.MinimumExpanding, QtWidgets.QSizePolicy.Policy.Fixed
         )
         self.search_to = QtWidgets.QDateTimeEdit()
         self._prepare_optional_datetime(self.search_to)
@@ -2447,7 +2447,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._register_theme_setter(lambda: self._apply_calendar_style(self.search_to))
         self.search_to.setMinimumWidth(input_width)
         self.search_to.setSizePolicy(
-            QtWidgets.QSizePolicy.MinimumExpanding, QtWidgets.QSizePolicy.Fixed
+            QtWidgets.QSizePolicy.Policy.MinimumExpanding, QtWidgets.QSizePolicy.Policy.Fixed
         )
 
         self._reset_journal_range()
@@ -2486,15 +2486,15 @@ class MainWindow(QtWidgets.QMainWindow):
             ]
         )
         header = self.search_table.horizontalHeader()
-        header.setSectionResizeMode(QtWidgets.QHeaderView.Interactive)
+        header.setSectionResizeMode(QtWidgets.QHeaderView.ResizeMode.Interactive)
         header.setStretchLastSection(True)
         header.setMinimumSectionSize(90)
         self.search_table.setColumnWidth(0, 220)
         self.search_table.setColumnWidth(3, 140)
         self._apply_stylesheet(self.search_table, lambda: self.table_style)
-        self.search_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
-        self.search_table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
-        self.search_table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+        self.search_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectionBehavior.SelectRows)
+        self.search_table.setSelectionMode(QtWidgets.QAbstractItemView.SelectionMode.SingleSelection)
+        self.search_table.setEditTriggers(QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers)
         self.search_table.verticalHeader().setVisible(False)
         self.search_table.itemActivated.connect(self._on_journal_event_activated)
         layout.addWidget(self.search_table)
@@ -2544,7 +2544,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 row_data["timestamp"], target_zone, offset_minutes
             )
             time_item = QtWidgets.QTableWidgetItem(formatted_time)
-            time_item.setData(QtCore.Qt.UserRole, event_id)
+            time_item.setData(QtCore.Qt.ItemDataRole.UserRole, event_id)
             self.search_table.setItem(row_index, 0, time_item)
             self.search_table.setItem(row_index, 1, QtWidgets.QTableWidgetItem(row_data["channel"]))
 
@@ -2552,12 +2552,12 @@ class MainWindow(QtWidgets.QMainWindow):
             country_icon = self._get_flag_icon(row_data.get("country"))
             if country_icon:
                 country_item.setIcon(country_icon)
-            country_item.setTextAlignment(QtCore.Qt.AlignCenter)
+            country_item.setTextAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
             self.search_table.setItem(row_index, 2, country_item)
 
             direction = self._format_direction(row_data.get("direction"))
             direction_item = QtWidgets.QTableWidgetItem(direction)
-            direction_item.setTextAlignment(QtCore.Qt.AlignCenter)
+            direction_item.setTextAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
             self.search_table.setItem(row_index, 3, direction_item)
 
             self.search_table.setItem(row_index, 4, QtWidgets.QTableWidgetItem(row_data["plate"]))
@@ -2576,7 +2576,7 @@ class MainWindow(QtWidgets.QMainWindow):
         event_id_item = self.search_table.item(row, 0)
         if event_id_item is None:
             return
-        event_id = int(event_id_item.data(QtCore.Qt.UserRole) or 0)
+        event_id = int(event_id_item.data(QtCore.Qt.ItemDataRole.UserRole) or 0)
         event = self.search_results.get(event_id)
         if not event:
             return
@@ -2597,10 +2597,10 @@ class MainWindow(QtWidgets.QMainWindow):
         dialog.setWindowTitle("Информация о событии")
         dialog.setMinimumSize(720, 640)
         dialog.setWindowFlags(
-            QtCore.Qt.Dialog
-            | QtCore.Qt.FramelessWindowHint
-            | QtCore.Qt.WindowSystemMenuHint
-            | QtCore.Qt.WindowMinMaxButtonsHint
+            QtCore.Qt.WindowType.Dialog
+            | QtCore.Qt.WindowType.FramelessWindowHint
+            | QtCore.Qt.WindowType.WindowSystemMenuHint
+            | QtCore.Qt.WindowType.WindowMinMaxButtonsHint
         )
         dialog.setStyleSheet(
             f"QDialog {{ background-color: {self.colors['surface']}; border: 1px solid {self.colors['border']}; border-radius: 12px; }}"
@@ -2648,12 +2648,12 @@ class MainWindow(QtWidgets.QMainWindow):
         header_layout.addWidget(close_btn)
 
         def start_move(event: QtGui.QMouseEvent) -> None:  # type: ignore[override]
-            if event.button() == QtCore.Qt.LeftButton:
+            if event.button() == QtCore.Qt.MouseButton.LeftButton:
                 header._drag_pos = event.globalPos() - dialog.frameGeometry().topLeft()  # type: ignore[attr-defined]
                 event.accept()
 
         def move_window(event: QtGui.QMouseEvent) -> None:  # type: ignore[override]
-            if event.buttons() & QtCore.Qt.LeftButton and hasattr(header, "_drag_pos") and not dialog.isMaximized():
+            if event.buttons() & QtCore.Qt.MouseButton.LeftButton and hasattr(header, "_drag_pos") and not dialog.isMaximized():
                 dialog.move(event.globalPos() - header._drag_pos)  # type: ignore[attr-defined]
                 event.accept()
 
@@ -2674,7 +2674,7 @@ class MainWindow(QtWidgets.QMainWindow):
         footer_row.addWidget(bottom_close_btn)
         dialog_layout.addLayout(footer_row)
 
-        dialog.exec_()
+        dialog.exec()
 
     # ------------------ Настройки ------------------
     def _build_settings_tab(self) -> QtWidgets.QWidget:
@@ -2723,8 +2723,8 @@ class MainWindow(QtWidgets.QMainWindow):
     def _build_general_settings_tab(self) -> QtWidgets.QWidget:
         scroll = QtWidgets.QScrollArea()
         scroll.setWidgetResizable(True)
-        scroll.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
-        scroll.setFrameShape(QtWidgets.QFrame.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setFrameShape(QtWidgets.QFrame.Shape.NoFrame)
         self._apply_stylesheet(
             scroll,
             lambda: (
@@ -2759,7 +2759,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
             form = QtWidgets.QFormLayout()
             self._tune_form_layout(form)
-            form.setFieldGrowthPolicy(QtWidgets.QFormLayout.AllNonFixedFieldsGrow)
+            form.setFieldGrowthPolicy(QtWidgets.QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
             frame_layout.addLayout(form)
 
             return frame, form
@@ -2797,14 +2797,14 @@ class MainWindow(QtWidgets.QMainWindow):
 
         storage_group, storage_form = make_section("Хранилище")
         storage_group.setMaximumWidth(self.FIELD_MAX_WIDTH + 220)
-        storage_form.setFieldGrowthPolicy(QtWidgets.QFormLayout.FieldsStayAtSizeHint)
+        storage_form.setFieldGrowthPolicy(QtWidgets.QFormLayout.FieldGrowthPolicy.FieldsStayAtSizeHint)
 
         db_row = QtWidgets.QHBoxLayout()
         db_row.setContentsMargins(0, 0, 0, 0)
         db_row.setSpacing(8)
         self.db_dir_input = QtWidgets.QLineEdit()
         self._configure_line_edit(self.db_dir_input, self.FIELD_MAX_WIDTH)
-        self.db_dir_input.setSizePolicy(QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.Fixed)
+        self.db_dir_input.setSizePolicy(QtWidgets.QSizePolicy.Policy.Preferred, QtWidgets.QSizePolicy.Policy.Fixed)
         browse_db_btn = QtWidgets.QPushButton("Выбрать...")
         self._polish_button(browse_db_btn, 130)
         browse_db_btn.clicked.connect(self._choose_db_dir)
@@ -2813,7 +2813,7 @@ class MainWindow(QtWidgets.QMainWindow):
         db_container = QtWidgets.QWidget()
         db_container.setLayout(db_row)
         db_container.setMaximumWidth(self.FIELD_MAX_WIDTH + 60)
-        db_container.setSizePolicy(QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Preferred)
+        db_container.setSizePolicy(QtWidgets.QSizePolicy.Policy.Fixed, QtWidgets.QSizePolicy.Policy.Preferred)
         storage_form.addRow("Папка БД:", db_container)
 
         screenshot_row = QtWidgets.QHBoxLayout()
@@ -2821,7 +2821,7 @@ class MainWindow(QtWidgets.QMainWindow):
         screenshot_row.setSpacing(8)
         self.screenshot_dir_input = QtWidgets.QLineEdit()
         self._configure_line_edit(self.screenshot_dir_input, self.FIELD_MAX_WIDTH)
-        self.screenshot_dir_input.setSizePolicy(QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.Fixed)
+        self.screenshot_dir_input.setSizePolicy(QtWidgets.QSizePolicy.Policy.Preferred, QtWidgets.QSizePolicy.Policy.Fixed)
         browse_screenshot_btn = QtWidgets.QPushButton("Выбрать...")
         self._polish_button(browse_screenshot_btn, 130)
         browse_screenshot_btn.clicked.connect(self._choose_screenshot_dir)
@@ -2830,7 +2830,7 @@ class MainWindow(QtWidgets.QMainWindow):
         screenshot_container = QtWidgets.QWidget()
         screenshot_container.setLayout(screenshot_row)
         screenshot_container.setMaximumWidth(self.FIELD_MAX_WIDTH + 60)
-        screenshot_container.setSizePolicy(QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Preferred)
+        screenshot_container.setSizePolicy(QtWidgets.QSizePolicy.Policy.Fixed, QtWidgets.QSizePolicy.Policy.Preferred)
         storage_form.addRow("Папка для скриншотов:", screenshot_container)
 
         logs_row = QtWidgets.QHBoxLayout()
@@ -2838,7 +2838,7 @@ class MainWindow(QtWidgets.QMainWindow):
         logs_row.setSpacing(8)
         self.logs_dir_input = QtWidgets.QLineEdit()
         self._configure_line_edit(self.logs_dir_input, self.FIELD_MAX_WIDTH)
-        self.logs_dir_input.setSizePolicy(QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.Fixed)
+        self.logs_dir_input.setSizePolicy(QtWidgets.QSizePolicy.Policy.Preferred, QtWidgets.QSizePolicy.Policy.Fixed)
         browse_logs_btn = QtWidgets.QPushButton("Выбрать...")
         self._polish_button(browse_logs_btn, 130)
         browse_logs_btn.clicked.connect(self._choose_logs_dir)
@@ -2847,7 +2847,7 @@ class MainWindow(QtWidgets.QMainWindow):
         logs_container = QtWidgets.QWidget()
         logs_container.setLayout(logs_row)
         logs_container.setMaximumWidth(self.FIELD_MAX_WIDTH + 60)
-        logs_container.setSizePolicy(QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Preferred)
+        logs_container.setSizePolicy(QtWidgets.QSizePolicy.Policy.Fixed, QtWidgets.QSizePolicy.Policy.Preferred)
         storage_form.addRow("Папка логов:", logs_container)
 
         self.log_retention_input = QtWidgets.QSpinBox()
@@ -2909,7 +2909,7 @@ class MainWindow(QtWidgets.QMainWindow):
         plate_dir_row.setSpacing(8)
         self.country_config_dir_input = QtWidgets.QLineEdit()
         self._configure_line_edit(self.country_config_dir_input, self.FIELD_MAX_WIDTH)
-        self.country_config_dir_input.setSizePolicy(QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.Fixed)
+        self.country_config_dir_input.setSizePolicy(QtWidgets.QSizePolicy.Policy.Preferred, QtWidgets.QSizePolicy.Policy.Fixed)
         browse_country_btn = QtWidgets.QPushButton("Выбрать...")
         self._polish_button(browse_country_btn, 130)
         browse_country_btn.clicked.connect(self._choose_country_dir)
@@ -2919,13 +2919,13 @@ class MainWindow(QtWidgets.QMainWindow):
         plate_dir_container = QtWidgets.QWidget()
         plate_dir_container.setLayout(plate_dir_row)
         plate_dir_container.setMaximumWidth(self.FIELD_MAX_WIDTH + 60)
-        plate_dir_container.setSizePolicy(QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Preferred)
+        plate_dir_container.setSizePolicy(QtWidgets.QSizePolicy.Policy.Fixed, QtWidgets.QSizePolicy.Policy.Preferred)
         plate_form.addRow("Каталог шаблонов:", plate_dir_container)
 
         self.country_templates_list = QtWidgets.QListWidget()
         self.country_templates_list.setMaximumWidth(self.FIELD_MAX_WIDTH)
-        self.country_templates_list.setSizePolicy(QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Expanding)
-        self.country_templates_list.setSelectionMode(QtWidgets.QAbstractItemView.NoSelection)
+        self.country_templates_list.setSizePolicy(QtWidgets.QSizePolicy.Policy.Fixed, QtWidgets.QSizePolicy.Policy.Expanding)
+        self.country_templates_list.setSelectionMode(QtWidgets.QAbstractItemView.SelectionMode.NoSelection)
         self._register_theme_setter(
             lambda: self.country_templates_list.setStyleSheet(self.list_style)
         )
@@ -3086,7 +3086,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.list_filter_lists_widget = QtWidgets.QListWidget()
         self.list_filter_lists_widget.setMaximumHeight(160)
-        self.list_filter_lists_widget.setSelectionMode(QtWidgets.QAbstractItemView.NoSelection)
+        self.list_filter_lists_widget.setSelectionMode(QtWidgets.QAbstractItemView.SelectionMode.NoSelection)
         self._apply_stylesheet(self.list_filter_lists_widget, lambda: self.list_style)
         list_form.addRow("Списки:", self.list_filter_lists_widget)
 
@@ -3282,13 +3282,13 @@ class MainWindow(QtWidgets.QMainWindow):
         self.roi_points_table.setHorizontalHeaderLabels(["X (px)", "Y (px)"])
         header = self.roi_points_table.horizontalHeader()
         header.setStretchLastSection(False)
-        header.setSectionResizeMode(QtWidgets.QHeaderView.Fixed)
+        header.setSectionResizeMode(QtWidgets.QHeaderView.ResizeMode.Fixed)
         header.setDefaultSectionSize(90)
         header.setMinimumSectionSize(80)
         self._apply_stylesheet(self.roi_points_table, lambda: self.table_style)
         self.roi_points_table.verticalHeader().setVisible(False)
-        self.roi_points_table.setEditTriggers(QtWidgets.QAbstractItemView.AllEditTriggers)
-        self.roi_points_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        self.roi_points_table.setEditTriggers(QtWidgets.QAbstractItemView.EditTrigger.AllEditTriggers)
+        self.roi_points_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectionBehavior.SelectRows)
         self.roi_points_table.setMaximumHeight(220)
         self.roi_points_table.itemChanged.connect(self._on_roi_table_changed)
 
@@ -3322,8 +3322,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self._polish_button(save_btn, self.ACTION_BUTTON_WIDTH)
         save_btn.clicked.connect(self._save_channel)
         action_row = QtWidgets.QHBoxLayout()
-        action_row.addWidget(save_btn, 0, QtCore.Qt.AlignLeft)
-        action_row.addWidget(refresh_btn, 0, QtCore.Qt.AlignLeft)
+        action_row.addWidget(save_btn, 0, QtCore.Qt.AlignmentFlag.AlignLeft)
+        action_row.addWidget(refresh_btn, 0, QtCore.Qt.AlignmentFlag.AlignLeft)
         action_row.addStretch(1)
         right_panel.addLayout(action_row)
         right_panel.addStretch()
@@ -3453,7 +3453,7 @@ class MainWindow(QtWidgets.QMainWindow):
         save_btn = QtWidgets.QPushButton("Сохранить контроллер")
         self._polish_button(save_btn, self.ACTION_BUTTON_WIDTH)
         save_btn.clicked.connect(self._save_controller)
-        details_layout.addWidget(save_btn, 0, QtCore.Qt.AlignLeft)
+        details_layout.addWidget(save_btn, 0, QtCore.Qt.AlignmentFlag.AlignLeft)
         details_layout.addStretch(1)
 
         layout.addWidget(self.controller_details_container, 1)
@@ -3545,11 +3545,11 @@ class MainWindow(QtWidgets.QMainWindow):
         self.plate_entries_table.setColumnCount(2)
         self.plate_entries_table.setHorizontalHeaderLabels(["Гос. номер", "Комментарий"])
         header = self.plate_entries_table.horizontalHeader()
-        header.setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeToContents)
-        header.setSectionResizeMode(1, QtWidgets.QHeaderView.Stretch)
+        header.setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(1, QtWidgets.QHeaderView.ResizeMode.Stretch)
         self._apply_stylesheet(self.plate_entries_table, lambda: self.table_style)
         self.plate_entries_table.verticalHeader().setVisible(False)
-        self.plate_entries_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        self.plate_entries_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectionBehavior.SelectRows)
         self.plate_entries_table.itemChanged.connect(self._on_plate_entry_changed)
         entries_layout.addWidget(self.plate_entries_table)
 
@@ -3766,7 +3766,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 if not hotkey:
                     continue
                 shortcut = QtWidgets.QShortcut(QtGui.QKeySequence(hotkey), self)
-                shortcut.setContext(QtCore.Qt.ApplicationShortcut)
+                shortcut.setContext(QtCore.Qt.ShortcutContext.ApplicationShortcut)
                 shortcut.activated.connect(
                     lambda c=controller, r=relay_index: self.controller_service.send_command(
                         c,
@@ -3815,7 +3815,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.plate_lists_widget.clear()
         for plate_list in lists:
             item = QtWidgets.QListWidgetItem(self._plate_list_item_label(plate_list))
-            item.setData(QtCore.Qt.UserRole, plate_list["id"])
+            item.setData(QtCore.Qt.ItemDataRole.UserRole, plate_list["id"])
             self.plate_lists_widget.addItem(item)
         self.plate_lists_widget.blockSignals(False)
         if self.plate_lists_widget.count():
@@ -3872,7 +3872,7 @@ class MainWindow(QtWidgets.QMainWindow):
         item = self.plate_lists_widget.currentItem()
         if not item:
             return None
-        return item.data(QtCore.Qt.UserRole)
+        return item.data(QtCore.Qt.ItemDataRole.UserRole)
 
     def _add_plate_list(self) -> None:
         new_id = self.list_db.create_list("Новый список", "white")
@@ -3909,9 +3909,9 @@ class MainWindow(QtWidgets.QMainWindow):
             row = self.plate_entries_table.rowCount()
             self.plate_entries_table.insertRow(row)
             plate_item = QtWidgets.QTableWidgetItem(entry.get("plate", ""))
-            plate_item.setData(QtCore.Qt.UserRole, entry.get("id"))
+            plate_item.setData(QtCore.Qt.ItemDataRole.UserRole, entry.get("id"))
             comment_item = QtWidgets.QTableWidgetItem(entry.get("comment", ""))
-            comment_item.setData(QtCore.Qt.UserRole, entry.get("id"))
+            comment_item.setData(QtCore.Qt.ItemDataRole.UserRole, entry.get("id"))
             self.plate_entries_table.setItem(row, 0, plate_item)
             self.plate_entries_table.setItem(row, 1, comment_item)
         self._updating_list_entries = False
@@ -3945,7 +3945,7 @@ class MainWindow(QtWidgets.QMainWindow):
         item = self.plate_entries_table.item(row, 0)
         if item is None:
             return
-        entry_id = item.data(QtCore.Qt.UserRole)
+        entry_id = item.data(QtCore.Qt.ItemDataRole.UserRole)
         if entry_id is None:
             return
         self.list_db.delete_entry(int(entry_id))
@@ -3955,7 +3955,7 @@ class MainWindow(QtWidgets.QMainWindow):
     def _on_plate_entry_changed(self, item: QtWidgets.QTableWidgetItem) -> None:
         if self._updating_list_entries or item is None:
             return
-        entry_id = item.data(QtCore.Qt.UserRole)
+        entry_id = item.data(QtCore.Qt.ItemDataRole.UserRole)
         if entry_id is None:
             return
         row = item.row()
@@ -4039,10 +4039,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self.list_filter_lists_widget.clear()
         for plate_list in lists:
             item = QtWidgets.QListWidgetItem(self._plate_list_item_label(plate_list))
-            item.setData(QtCore.Qt.UserRole, plate_list["id"])
-            item.setFlags(item.flags() | QtCore.Qt.ItemIsUserCheckable)
+            item.setData(QtCore.Qt.ItemDataRole.UserRole, plate_list["id"])
+            item.setFlags(item.flags() | QtCore.Qt.ItemFlag.ItemIsUserCheckable)
             item.setCheckState(
-                QtCore.Qt.Checked if plate_list["id"] in current_ids else QtCore.Qt.Unchecked
+                QtCore.Qt.CheckState.Checked if plate_list["id"] in current_ids else QtCore.Qt.CheckState.Unchecked
             )
             self.list_filter_lists_widget.addItem(item)
         self._updating_list_filter = False
@@ -4054,8 +4054,8 @@ class MainWindow(QtWidgets.QMainWindow):
         selected: List[int] = []
         for idx in range(self.list_filter_lists_widget.count()):
             item = self.list_filter_lists_widget.item(idx)
-            if item and item.checkState() == QtCore.Qt.Checked:
-                selected.append(int(item.data(QtCore.Qt.UserRole)))
+            if item and item.checkState() == QtCore.Qt.CheckState.Checked:
+                selected.append(int(item.data(QtCore.Qt.ItemDataRole.UserRole)))
         return selected
 
     def _apply_list_filter_selection(self, list_ids: List[int]) -> None:
@@ -4068,7 +4068,7 @@ class MainWindow(QtWidgets.QMainWindow):
             if item is None:
                 continue
             item.setCheckState(
-                QtCore.Qt.Checked if int(item.data(QtCore.Qt.UserRole)) in selected else QtCore.Qt.Unchecked
+                QtCore.Qt.CheckState.Checked if int(item.data(QtCore.Qt.ItemDataRole.UserRole)) in selected else QtCore.Qt.CheckState.Unchecked
             )
         self._updating_list_filter = False
         self._on_list_filter_mode_changed()
@@ -4277,23 +4277,23 @@ class MainWindow(QtWidgets.QMainWindow):
         self.country_templates_list.clear()
         if not available:
             item = QtWidgets.QListWidgetItem("Конфигурации стран не найдены")
-            item.setFlags(QtCore.Qt.NoItemFlags)
+            item.setFlags(QtCore.Qt.ItemFlag.NoItemFlags)
             self.country_templates_list.addItem(item)
             return
 
         for cfg in available:
             item = QtWidgets.QListWidgetItem(f"{cfg['code']} — {cfg['name']}")
-            item.setData(QtCore.Qt.UserRole, cfg["code"])
-            item.setFlags(item.flags() | QtCore.Qt.ItemIsUserCheckable)
-            item.setCheckState(QtCore.Qt.Checked if cfg["code"] in enabled_codes else QtCore.Qt.Unchecked)
+            item.setData(QtCore.Qt.ItemDataRole.UserRole, cfg["code"])
+            item.setFlags(item.flags() | QtCore.Qt.ItemFlag.ItemIsUserCheckable)
+            item.setCheckState(QtCore.Qt.CheckState.Checked if cfg["code"] in enabled_codes else QtCore.Qt.CheckState.Unchecked)
             self.country_templates_list.addItem(item)
 
     def _collect_enabled_countries(self) -> List[str]:
         codes: List[str] = []
         for idx in range(self.country_templates_list.count()):
             item = self.country_templates_list.item(idx)
-            if item and item.flags() & QtCore.Qt.ItemIsUserCheckable and item.checkState() == QtCore.Qt.Checked:
-                codes.append(str(item.data(QtCore.Qt.UserRole)))
+            if item and item.flags() & QtCore.Qt.ItemFlag.ItemIsUserCheckable and item.checkState() == QtCore.Qt.CheckState.Checked:
+                codes.append(str(item.data(QtCore.Qt.ItemDataRole.UserRole)))
         return codes
 
     def _save_general_settings(self) -> None:

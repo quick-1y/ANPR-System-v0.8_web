@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from PyQt5 import QtWidgets
+from PyQt6 import QtWidgets
 
 
 def build_main_root(header: QtWidgets.QWidget, tabs: QtWidgets.QTabWidget) -> QtWidgets.QWidget:

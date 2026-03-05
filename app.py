@@ -4,7 +4,7 @@ import sys
 import warnings
 from pathlib import Path
 
-from PyQt5 import QtWidgets
+from PyQt6 import QtWidgets
 
 from anpr.config import Config
 from anpr.infrastructure.logging_manager import LoggingManager, get_logger
@@ -54,7 +54,7 @@ def main() -> None:
         sys.exit(1)
     window = MainWindow(config)
     window.show()
-    sys.exit(app.exec_())
+    sys.exit(app.exec())
 
 
 if __name__ == "__main__":
