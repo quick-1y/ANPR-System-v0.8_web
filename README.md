@@ -8,6 +8,41 @@
 
 Десктопное приложение для автоматического распознавания автомобильных номеров с поддержкой многоканального видео, локальной базой данных и интеллектуальной обработкой в реальном времени.
 
+## 🔄 Web-first миграция (v0.8)
+
+В версии v0.8 начата поэтапная миграция с desktop-архитектуры на web-first сервисную модель.
+
+### Что уже реализовано
+- Добавлен backend API сервис `apps/api/main.py` (FastAPI) для управления каналами, ROI, списками и lifecycle каналов.
+- Добавлен live-поток событий распознавания через SSE: `GET /api/events/stream`.
+- Добавлен web MVP интерфейс оператора `apps/web/index.html` (каналы, статусы, события, ROI, списки).
+- Добавлен независимый runtime каналов `packages/anpr_core/channel_runtime.py` с отдельным lifecycle на канал.
+
+### Запуск web MVP
+```bash
+uvicorn apps.api.main:app --host 0.0.0.0 --port 8080
+```
+Открыть: `http://localhost:8080`
+
+### Актуальная структура проекта (переходный этап)
+```text
+ANPR-System-v0.8/
+├── app.py                      # legacy desktop entrypoint (до удаления на финальном этапе)
+├── apps/
+│   ├── api/
+│   │   └── main.py             # web API + SSE
+│   └── web/
+│       └── index.html          # web UI MVP
+├── packages/
+│   └── anpr_core/
+│       ├── channel_runtime.py  # независимая обработка каналов
+│       └── event_bus.py        # live event bus
+├── docs/
+│   └── migration_web_first.md  # аудит, mapping и план миграции
+└── anpr/                       # существующий core/infra + legacy desktop модули
+```
+
+
 ## 🚀 Основные возможности
 
 - **Многоканальный мониторинг** — одновременная работа с несколькими видеопотоками (RTSP/файлы/веб-камера)

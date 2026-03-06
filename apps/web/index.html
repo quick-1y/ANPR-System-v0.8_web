@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <title>ANPR Web MVP</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 16px; background:#111; color:#eee; }
+    .grid { display:grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .card { background:#1f1f1f; border:1px solid #333; border-radius:8px; padding:12px; }
+    input, button, select { margin: 4px; padding: 6px; }
+    table { width:100%; border-collapse: collapse; font-size: 13px; }
+    td, th { border-bottom: 1px solid #333; padding: 6px; text-align:left; }
+  </style>
+</head>
+<body>
+  <h1>ANPR Web-first MVP</h1>
+  <div class="grid">
+    <section class="card">
+      <h3>Каналы</h3>
+      <div>
+        <input id="channel-name" placeholder="Имя канала" />
+        <input id="channel-source" placeholder="RTSP/файл/индекс камеры" />
+        <button onclick="addChannel()">Добавить</button>
+      </div>
+      <table id="channels-table"></table>
+    </section>
+
+    <section class="card">
+      <h3>Live ANPR события</h3>
+      <table id="events-table"></table>
+    </section>
+
+    <section class="card">
+      <h3>ROI (JSON)</h3>
+      <input id="roi-channel-id" placeholder="ID канала" />
+      <textarea id="roi-json" rows="4" style="width:100%;">{"unit":"percent","points":[{"x":10,"y":10},{"x":90,"y":10},{"x":90,"y":90},{"x":10,"y":90}]}</textarea>
+      <button onclick="saveRoi()">Сохранить ROI</button>
+    </section>
+
+    <section class="card">
+      <h3>Списки</h3>
+      <input id="list-name" placeholder="Название списка" />
+      <select id="list-type"><option value="white">white</option><option value="black">black</option></select>
+      <button onclick="createList()">Создать список</button>
+      <table id="lists-table"></table>
+    </section>
+  </div>
+
+  <script>
+    async function api(path, method='GET', body=null) {
+      const res = await fetch(path, {method, headers:{'Content-Type':'application/json'}, body: body ? JSON.stringify(body) : null});
+      return res.json();
+    }
+
+    async function refreshChannels() {
+      const channels = await api('/api/channels');
+      const rows = ['<tr><th>ID</th><th>Имя</th><th>State</th><th>FPS</th><th>Actions</th></tr>'];
+      channels.forEach(ch => {
+        const m = ch.metrics || {};
+        rows.push(`<tr><td>${ch.id}</td><td>${ch.name}</td><td>${m.state || 'stopped'}</td><td>${(m.fps||0).toFixed(1)}</td>
+          <td><button onclick="startChannel(${ch.id})">Start</button><button onclick="stopChannel(${ch.id})">Stop</button></td></tr>`);
+      });
+      document.getElementById('channels-table').innerHTML = rows.join('');
+    }
+
+    async function refreshLists() {
+      const lists = await api('/api/lists');
+      document.getElementById('lists-table').innerHTML = '<tr><th>ID</th><th>Название</th><th>Тип</th></tr>' + lists.map(l=>`<tr><td>${l.id}</td><td>${l.name}</td><td>${l.type}</td></tr>`).join('');
+    }
+
+    async function startChannel(id){ await api(`/api/channels/${id}/start`, 'POST'); refreshChannels(); }
+    async function stopChannel(id){ await api(`/api/channels/${id}/stop`, 'POST'); refreshChannels(); }
+
+    async function addChannel(){
+      await api('/api/channels', 'POST', {
+        name: document.getElementById('channel-name').value,
+        source: document.getElementById('channel-source').value,
+      });
+      refreshChannels();
+    }
+
+    async function saveRoi(){
+      const id = document.getElementById('roi-channel-id').value;
+      const region = JSON.parse(document.getElementById('roi-json').value);
+      await api(`/api/channels/${id}`, 'PUT', {region, roi_enabled:true});
+      refreshChannels();
+    }
+
+    async function createList(){
+      await api('/api/lists', 'POST', {
+        name: document.getElementById('list-name').value,
+        type: document.getElementById('list-type').value
+      });
+      refreshLists();
+    }
+
+    function setupEvents(){
+      const es = new EventSource('/api/events/stream');
+      es.onmessage = (m)=>{
+        const e = JSON.parse(m.data);
+        const table = document.getElementById('events-table');
+        const row = `<tr><td>${new Date(e.timestamp).toLocaleTimeString()}</td><td>${e.channel}</td><td>${e.plate}</td><td>${(e.confidence||0).toFixed(2)}</td></tr>`;
+        table.innerHTML = row + table.innerHTML;
+      };
+    }
+
+    refreshChannels();
+    refreshLists();
+    setupEvents();
+    setInterval(refreshChannels, 5000);
+  </script>
+</body>
+</html>

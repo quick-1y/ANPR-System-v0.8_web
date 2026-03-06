@@ -7,3 +7,6 @@ PyQt5
 aiosqlite
 psutil
 PyYAML
+
+fastapi
+uvicorn
