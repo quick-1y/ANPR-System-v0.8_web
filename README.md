@@ -17,12 +17,14 @@
 - Добавлен live-поток событий распознавания через SSE: `GET /api/events/stream`.
 - Добавлен web MVP интерфейс оператора `apps/web/index.html` (каналы, статусы, события, ROI, списки).
 - Добавлен независимый runtime каналов `packages/anpr_core/channel_runtime.py` с отдельным lifecycle на канал.
+- Добавлен сервис `apps/video_gateway/main.py` для server-side видео: HLS live-preview, профили качества `low/medium/high`, переключение профиля на лету, и WebRTC discovery-контракт для внешнего SFU/медиасервера.
 
 ### Запуск web MVP
 ```bash
 uvicorn apps.api.main:app --host 0.0.0.0 --port 8080
+uvicorn apps.video_gateway.main:app --host 0.0.0.0 --port 8091
 ```
-Открыть: `http://localhost:8080`
+Открыть: `http://localhost:8080` (UI/API) и `http://localhost:8091/video/health` (Video Gateway).
 
 ### Актуальная структура проекта (переходный этап)
 ```text
@@ -31,6 +33,8 @@ ANPR-System-v0.8/
 ├── apps/
 │   ├── api/
 │   │   └── main.py             # web API + SSE
+│   ├── video_gateway/
+│   │   └── main.py             # HLS gateway + quality profiles + WebRTC discovery
 │   └── web/
 │       └── index.html          # web UI MVP
 ├── packages/
@@ -440,3 +444,19 @@ ANPR-System-v0.7/
 ## 📄 Лицензия
 
 MIT License
+
+
+## 📌 Статус этапов миграции
+- ✅ Этап 0: аудит
+- ✅ Этап 1: архитектурный план
+- ✅ Этап 2: core extraction (MVP)
+- ✅ Этап 3: event pipeline + telemetry
+- ✅ Этап 4: web UI MVP
+- ✅ Этап 5: Video Gateway (HLS + profiles + WebRTC discovery)
+- ⏳ Этап 6: data layer эксплуатация (retention/rotation/export)
+- ⏳ Этап 7: удаление desktop UI после feature parity
+
+### Следующие этапы
+1. Реализовать retention/rotation/export и миграции хранения.
+2. Подготовить переход на PostgreSQL (dual-write/rolling migration).
+3. Удалить desktop UI и связанные зависимости после валидации web-сценариев.

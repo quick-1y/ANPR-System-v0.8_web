@@ -72,3 +72,18 @@ anpr-web/
 - Этап 5: добавить Video Gateway (WebRTC + HLS + quality profiles).
 - Этап 6: retention/rotation/export для событий и медиа.
 - Этап 7: удалить desktop UI после достижения parity.
+
+## Статус этапов
+- ✅ Этап 0. Аудит проекта — выполнен.
+- ✅ Этап 1. Архитектурный план — выполнен.
+- ✅ Этап 2. Выделение ANPR Core Service (MVP-уровень) — выполнен.
+- ✅ Этап 3. Event & Telemetry (SSE + health + channel metrics) — выполнен.
+- ✅ Этап 4. Web UI MVP — выполнен.
+- ✅ Этап 5. Video Gateway (HLS + quality profiles + WebRTC discovery-контракт) — выполнен в базовой версии.
+- ⏳ Этап 6. Data Layer и эксплуатация — запланирован.
+- ⏳ Этап 7. Удаление desktop UI — запланирован после feature parity.
+
+## Следующие этапы (после текущего)
+1. Этап 6: добавить retention/rotation/export событий и медиаархива, вынести политики хранения в конфиг.
+2. Этап 6: подготовить миграции на PostgreSQL и dual-write режим без простоя.
+3. Этап 7: удалить desktop UI, desktop-зависимости и legacy сборку после проверки критических сценариев web MVP.

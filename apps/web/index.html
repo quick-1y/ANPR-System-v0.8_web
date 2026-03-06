@@ -14,6 +14,7 @@
 </head>
 <body>
   <h1>ANPR Web-first MVP</h1>
+  <p>Video Gateway: HLS + WebRTC contract (этап 5)</p>
   <div class="grid">
     <section class="card">
       <h3>Каналы</h3>
@@ -23,6 +24,17 @@
         <button onclick="addChannel()">Добавить</button>
       </div>
       <table id="channels-table"></table>
+    </section>
+
+    <section class="card">
+      <h3>Video Gateway</h3>
+      <input id="vg-base" placeholder="http://localhost:8091" value="http://localhost:8091" />
+      <input id="vg-channel-id" placeholder="ID канала" />
+      <input id="vg-source" placeholder="RTSP source" />
+      <select id="vg-profile"><option>low</option><option selected>medium</option><option>high</option></select>
+      <button onclick="startVideo()">Start Video</button>
+      <button onclick="switchVideoProfile()">Switch Profile</button>
+      <table id="video-table"></table>
     </section>
 
     <section class="card">
@@ -50,6 +62,42 @@
     async function api(path, method='GET', body=null) {
       const res = await fetch(path, {method, headers:{'Content-Type':'application/json'}, body: body ? JSON.stringify(body) : null});
       return res.json();
+    }
+
+
+
+    async function vg(path, method='GET', body=null) {
+      const base = document.getElementById('vg-base').value.replace(/\/$/, '');
+      const res = await fetch(base + path, {method, headers:{'Content-Type':'application/json'}, body: body ? JSON.stringify(body) : null});
+      return res.json();
+    }
+
+    async function refreshVideo(){
+      try {
+        const channels = await vg('/video/channels');
+        const rows = ['<tr><th>Channel</th><th>Profile</th><th>HLS</th><th>WebRTC</th></tr>'];
+        Object.values(channels).forEach(ch => {
+          rows.push(`<tr><td>${ch.channel_id}</td><td>${ch.profile}</td><td><a href="${document.getElementById('vg-base').value}${ch.hls_url}" target="_blank">playlist</a></td><td>${ch.webrtc_url}</td></tr>`);
+        });
+        document.getElementById('video-table').innerHTML = rows.join('');
+      } catch (e) {
+        document.getElementById('video-table').innerHTML = '<tr><td>Video Gateway недоступен</td></tr>';
+      }
+    }
+
+    async function startVideo(){
+      const id = document.getElementById('vg-channel-id').value;
+      await vg(`/video/channels/${id}/start`, 'POST', {
+        source: document.getElementById('vg-source').value,
+        profile: document.getElementById('vg-profile').value
+      });
+      refreshVideo();
+    }
+
+    async function switchVideoProfile(){
+      const id = document.getElementById('vg-channel-id').value;
+      await vg(`/video/channels/${id}/profile`, 'POST', { profile: document.getElementById('vg-profile').value });
+      refreshVideo();
     }
 
     async function refreshChannels() {
@@ -107,7 +155,9 @@
     refreshChannels();
     refreshLists();
     setupEvents();
+    refreshVideo();
     setInterval(refreshChannels, 5000);
+    setInterval(refreshVideo, 5000);
   </script>
 </body>
 </html>
