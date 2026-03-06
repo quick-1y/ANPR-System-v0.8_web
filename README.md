@@ -58,47 +58,6 @@ ANPR-System-v0.8/
 ```
 
 
-## 🔄 Web-first миграция (v0.8)
-
-В версии v0.8 начата поэтапная миграция с desktop-архитектуры на web-first сервисную модель.
-
-### Что уже реализовано
-- Добавлен backend API сервис `apps/api/main.py` (FastAPI) для управления каналами, ROI, списками и lifecycle каналов.
-- Добавлен live-поток событий распознавания через SSE: `GET /api/events/stream`.
-- Добавлен web MVP интерфейс оператора `apps/web/index.html` (каналы, статусы, события, ROI, списки).
-- Добавлен независимый runtime каналов `packages/anpr_core/channel_runtime.py` с отдельным lifecycle на канал.
-- Добавлен сервис `apps/video_gateway/main.py` для server-side видео: HLS live-preview, профили качества `low/medium/high`, переключение профиля на лету, и WebRTC discovery-контракт для внешнего SFU/медиасервера.
-- Добавлен эксплуатационный data layer: retention/rotation/export через `apps/api/data_lifecycle.py` и API `/api/data/*` (политики хранения, ручной запуск очистки, экспорт CSV/ZIP).
-
-### Запуск web MVP
-```bash
-uvicorn apps.api.main:app --host 0.0.0.0 --port 8080
-uvicorn apps.video_gateway.main:app --host 0.0.0.0 --port 8091
-```
-Открыть: `http://localhost:8080` (UI/API) и `http://localhost:8091/video/health` (Video Gateway).
-
-### Актуальная структура проекта (переходный этап)
-```text
-ANPR-System-v0.8/
-├── app.py                      # legacy desktop entrypoint (до удаления на финальном этапе)
-├── apps/
-│   ├── api/
-│   │   ├── main.py             # web API + SSE + data lifecycle endpoints
-│   │   └── data_lifecycle.py   # retention/rotation/export сервис
-│   ├── video_gateway/
-│   │   └── main.py             # HLS gateway + quality profiles + WebRTC discovery
-│   └── web/
-│       └── index.html          # web UI MVP
-├── packages/
-│   └── anpr_core/
-│       ├── channel_runtime.py  # независимая обработка каналов
-│       └── event_bus.py        # live event bus
-├── docs/
-│   └── migration_web_first.md  # аудит, mapping и план миграции
-└── anpr/                       # существующий core/infra + legacy desktop модули
-```
-
-
 ## 🚀 Основные возможности
 
 - **Многоканальный мониторинг** — одновременная работа с несколькими видеопотоками (RTSP/файлы/веб-камера)

@@ -15,6 +15,10 @@ from anpr.infrastructure.list_database import ListDatabase
 from anpr.infrastructure.settings_manager import SettingsManager
 from anpr.infrastructure.storage import EventDatabase
 from apps.api.data_lifecycle import DataLifecycleService, RetentionPolicy
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+WEB_DIR = PROJECT_ROOT / "apps" / "web"
 from packages.anpr_core.channel_runtime import ChannelProcessor
 from packages.anpr_core.event_bus import EventBus
 
@@ -90,7 +94,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-app.mount("/web", StaticFiles(directory="apps/web", html=True), name="web")
+app.mount("/web", StaticFiles(directory=str(WEB_DIR), html=True), name="web")
 
 
 @app.on_event("startup")
@@ -111,7 +115,7 @@ def shutdown_channels() -> None:
 
 @app.get("/")
 def root() -> FileResponse:
-    return FileResponse(Path("apps/web/index.html"))
+    return FileResponse(WEB_DIR / "index.html")
 
 
 @app.get("/api/health")
