@@ -20,7 +20,126 @@
     "shared_memory": true
   },
   "grid": "2x2",
-  "channels": [],
+  "channels": [
+    {
+      "id": 1,
+      "name": "Въезд",
+      "source": "rtsp://admin:admin@195.239.135.49:2002/0",
+      "enabled": true,
+      "roi_enabled": true,
+      "region": {
+        "unit": "percent",
+        "points": [
+          {
+            "x": 0.0,
+            "y": 0.0
+          },
+          {
+            "x": 100.0,
+            "y": 0.0
+          },
+          {
+            "x": 100.0,
+            "y": 100.0
+          },
+          {
+            "x": 0.0,
+            "y": 100.0
+          }
+        ]
+      },
+      "best_shots": 10,
+      "cooldown_seconds": 10,
+      "ocr_min_confidence": 0.9,
+      "direction": {
+        "history_size": 12,
+        "min_track_length": 3,
+        "smoothing_window": 5,
+        "confidence_threshold": 0.55,
+        "jitter_pixels": 1.0,
+        "min_area_change_ratio": 0.02
+      },
+      "detection_mode": "motion",
+      "detector_frame_stride": 2,
+      "motion_threshold": 0.01,
+      "motion_frame_stride": 1,
+      "motion_activation_frames": 3,
+      "motion_release_frames": 6,
+      "size_filter_enabled": true,
+      "min_plate_size": {
+        "width": 80,
+        "height": 20
+      },
+      "max_plate_size": {
+        "width": 600,
+        "height": 240
+      },
+      "controller_id": null,
+      "controller_relay": 0,
+      "controller_action": "on",
+      "list_filter_mode": "all",
+      "list_filter_list_ids": []
+    },
+    {
+      "id": 2,
+      "name": "Въезд",
+      "source": "rtsp://admin:admin@195.239.135.49:2002/0",
+      "enabled": true,
+      "roi_enabled": true,
+      "region": {
+        "unit": "percent",
+        "points": [
+          {
+            "x": 0.0,
+            "y": 0.0
+          },
+          {
+            "x": 100.0,
+            "y": 0.0
+          },
+          {
+            "x": 100.0,
+            "y": 100.0
+          },
+          {
+            "x": 0.0,
+            "y": 100.0
+          }
+        ]
+      },
+      "best_shots": 10,
+      "cooldown_seconds": 10,
+      "ocr_min_confidence": 0.9,
+      "direction": {
+        "history_size": 12,
+        "min_track_length": 3,
+        "smoothing_window": 5,
+        "confidence_threshold": 0.55,
+        "jitter_pixels": 1.0,
+        "min_area_change_ratio": 0.02
+      },
+      "detection_mode": "motion",
+      "detector_frame_stride": 2,
+      "motion_threshold": 0.01,
+      "motion_frame_stride": 1,
+      "motion_activation_frames": 3,
+      "motion_release_frames": 6,
+      "size_filter_enabled": true,
+      "min_plate_size": {
+        "width": 80,
+        "height": 20
+      },
+      "max_plate_size": {
+        "width": 600,
+        "height": 240
+      },
+      "controller_id": null,
+      "controller_relay": 0,
+      "controller_action": "on",
+      "list_filter_mode": "all",
+      "list_filter_list_ids": []
+    }
+  ],
   "reconnect": {
     "signal_loss": {
       "enabled": true,
@@ -85,5 +204,44 @@
     "show_channel_metrics": true,
     "log_panel_enabled": false
   },
-  "controllers": []
+  "controllers": [
+    {
+      "id": 1,
+      "name": "Въезд",
+      "type": "DTWONDER2CH",
+      "address": "rtsp://admin:admin@195.239.135.49:2002/0",
+      "password": "0",
+      "relays": [
+        {
+          "mode": "pulse",
+          "timer_seconds": 1,
+          "hotkey": ""
+        },
+        {
+          "mode": "pulse",
+          "timer_seconds": 1,
+          "hotkey": ""
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "name": "",
+      "type": "DTWONDER2CH",
+      "address": "",
+      "password": "0",
+      "relays": [
+        {
+          "mode": "pulse",
+          "timer_seconds": 1,
+          "hotkey": ""
+        },
+        {
+          "mode": "pulse",
+          "timer_seconds": 1,
+          "hotkey": ""
+        }
+      ]
+    }
+  ]
 }

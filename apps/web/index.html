@@ -1,270 +1,177 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="ru">
 <head>
-  <meta charset="UTF-8" />
-  <title>ANPR Operator Dashboard</title>
-  <style>
-    body{margin:0;font-family:Arial;background:#0f1115;color:#e8eaed}
-    .top{display:flex;gap:12px;align-items:center;padding:10px 14px;background:#1a1f29;position:sticky;top:0}
-    .wrap{padding:12px}
-    .grid{display:grid;grid-template-columns:2fr 1fr;gap:12px}
-    .card{background:#1a1f29;border:1px solid #2d3542;border-radius:8px;padding:10px}
-    .tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px}
-    .tile{border:1px solid #2d3542;border-radius:8px;padding:8px;background:#11161f}
-    .title{display:flex;justify-content:space-between;align-items:center;font-size:13px;margin-bottom:6px}
-    .state{padding:2px 6px;border-radius:12px;font-size:11px}
-    .run{background:#1f6f43}.stop{background:#6b2a2a}.err{background:#7a4b00}
-    video{width:100%;background:#000;border-radius:6px;min-height:140px}
-    button,input,select,textarea{background:#0f1115;color:#e8eaed;border:1px solid #2d3542;border-radius:6px;padding:6px}
-    .row{display:flex;gap:6px;flex-wrap:wrap}
-    .events{max-height:70vh;overflow:auto}
-    .event{padding:8px;border-bottom:1px solid #2d3542;cursor:pointer}
-    .event:hover{background:#202838}
-    .muted{opacity:.75;font-size:12px}
-    pre{white-space:pre-wrap}
-  </style>
-  <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ANPR Desktop — Новый UI</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Onest:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+<style>
+  :root {--bg:#0a0c12;--surface:#10131c;--panel:#14182380;--card:#161b28;--border:#1e2535;--border2:#252d3e;--accent:#7c6bfa;--accent2:#9b8fff;--accent-glow:rgba(124,107,250,0.18);--danger:#f43f5e;--success:#34d399;--warning:#fbbf24;--text1:#e8ecf4;--text2:#8b96b0;--text3:#4e586e;--field:#0d1018;--mono:'JetBrains Mono', monospace;--sans:'Onest', sans-serif;}
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {font-family: var(--sans);background: var(--bg);color: var(--text1);height: 100vh;display: flex;flex-direction: column;overflow: hidden;font-size: 13px;user-select: none;}
+  .titlebar {height: 46px;background: var(--surface);border-bottom: 1px solid var(--border);display: flex;align-items: center;padding: 0 14px;gap: 10px;flex-shrink: 0;position: relative;}
+  .logo {display:flex;align-items:center;gap:9px}.logo-icon{width:26px;height:26px;background:linear-gradient(135deg,var(--accent),#5b4de8);border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:13px;box-shadow:0 0 14px var(--accent-glow)}
+  .logo-text{font-weight:700;font-size:14px;letter-spacing:.04em}.logo-text span{color:var(--accent)}
+  .titlebar-tabs{display:flex;gap:2px;margin-left:20px;flex:1}.ttab{padding:6px 16px;border-radius:8px;font-size:12.5px;font-weight:500;color:var(--text2);cursor:pointer;transition:all .15s;display:flex;align-items:center;gap:6px;letter-spacing:.01em}.ttab:hover{background:var(--border);color:var(--text1)}.ttab.active{background:var(--accent-glow);color:var(--accent2);box-shadow:inset 0 0 0 1px rgba(124,107,250,.25)}
+  .ttab .dot{width:6px;height:6px;border-radius:50%;background:var(--accent);display:none}.ttab.active .dot{display:block}
+  .titlebar-right{display:flex;align-items:center;gap:6px}.sys-stat{font-family:var(--mono);font-size:11px;color:var(--text3);padding:3px 8px;background:var(--field);border-radius:5px;border:1px solid var(--border);display:flex;gap:5px}.sys-stat b{color:var(--text2)}
+  .icon-btn{width:28px;height:28px;border-radius:7px;border:1px solid var(--border2);background:transparent;color:var(--text2);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:14px;transition:all .15s}.icon-btn:hover{background:var(--border);color:var(--text1)}
+  .api-input{background:var(--field);border:1px solid var(--border2);border-radius:6px;color:var(--text2);height:28px;padding:0 8px;font-size:11px;width:160px}
+  .content{flex:1;overflow:hidden;display:flex}.tab-pane{display:none;width:100%;height:100%}.tab-pane.active{display:flex}
+  #tab-obs{flex-direction:row}.obs-left{flex:1;display:flex;flex-direction:column;padding:12px;gap:10px;min-width:0}.obs-toolbar{display:flex;align-items:center;gap:8px}.obs-label{font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.08em}
+  .grid-select,.filter-input,.s-input{background:var(--field);border:1px solid var(--border2);border-radius:7px;color:var(--text1);font-family:var(--sans);font-size:12px;padding:4px 8px;outline:none}
+  .video-grid{flex:1;display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;gap:8px;min-height:0}.video-cell{background:var(--field);border:1px solid var(--border);border-radius:10px;position:relative;overflow:hidden;display:flex;align-items:center;justify-content:center;cursor:pointer}.video-cell.active{border-color:var(--accent)}.video-cell video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;background:#000;z-index:1}
+  .video-cell-bg{position:absolute;inset:0;background:repeating-linear-gradient(45deg,transparent,transparent 20px,rgba(255,255,255,.01) 20px,rgba(255,255,255,.01) 40px);z-index:0}.cam-label{position:absolute;top:8px;left:8px;background:rgba(10,12,18,.85);border:1px solid var(--border2);padding:3px 8px;border-radius:5px;font-family:var(--mono);font-size:10px;color:var(--text2);z-index:3}
+  .cam-status{position:absolute;top:8px;right:8px;width:7px;height:7px;border-radius:50%;z-index:3}.cam-status.live{background:var(--success);box-shadow:0 0 6px var(--success)}.cam-status.off{background:var(--text3)}
+  .cam-plate{position:absolute;bottom:8px;left:50%;transform:translateX(-50%);background:rgba(10,12,18,.9);border:1px solid var(--border2);padding:4px 12px;border-radius:6px;font-family:var(--mono);font-size:12px;font-weight:700;color:var(--accent2);letter-spacing:.12em;z-index:3;display:none}
+  .cam-no-signal{color:var(--text3);font-size:11px;font-family:var(--mono);display:flex;flex-direction:column;align-items:center;gap:5px;z-index:2}
+  .obs-right{width:280px;border-left:1px solid var(--border);display:flex;flex-direction:column}.panel-header{padding:12px 14px 10px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:var(--text2);border-bottom:1px solid var(--border)}
+  .event-feed{flex:1;overflow-y:auto;padding:8px;display:flex;flex-direction:column;gap:5px}.ev-item{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:8px 10px;cursor:pointer;display:flex;align-items:center;gap:9px}.ev-item.hot{border-color:rgba(124,107,250,.3)}
+  .ev-flag{font-size:16px}.ev-body{flex:1}.ev-plate{font-family:var(--mono);font-size:12.5px;font-weight:700;letter-spacing:.08em}.ev-meta{font-size:10.5px;color:var(--text3);margin-top:1px;display:flex;gap:6px}.ev-meta span{color:var(--text2)}.ev-conf{font-family:var(--mono);font-size:10px;color:var(--success)}.ev-conf.warn{color:var(--warning)}
+  #tab-journal{flex-direction:column;padding:14px;gap:12px;overflow:hidden}.filter-card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px 16px;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+  .filter-group{display:flex;flex-direction:column;gap:4px}.filter-label{font-size:10.5px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.07em}
+  .btn{padding:7px 16px;border-radius:8px;font-family:var(--sans);font-size:12.5px;font-weight:600;cursor:pointer;border:none}.btn-primary{background:var(--accent);color:#fff}.btn-ghost{background:transparent;color:var(--text2);border:1px solid var(--border2)}.btn-danger{background:transparent;color:var(--danger);border:1px solid rgba(244,63,94,.3)}
+  .data-table-wrap{flex:1;background:var(--card);border:1px solid var(--border);border-radius:12px;overflow:hidden;display:flex;flex-direction:column}.table-scroll{overflow:auto;flex:1}
+  .data-table{width:100%;border-collapse:collapse;font-size:12.5px}.data-table thead tr{background:var(--surface);border-bottom:1px solid var(--border)}.data-table th{padding:10px 14px;text-align:left;font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--text3)}.data-table td{padding:9px 14px;color:var(--text2);border-bottom:1px solid var(--border)}.plate-cell{font-family:var(--mono);font-weight:700;font-size:13px;color:var(--text1);letter-spacing:.07em}.conf-cell{font-family:var(--mono);color:var(--success)}
+  .badge{display:inline-flex;padding:2px 7px;border-radius:4px;font-size:10.5px;font-weight:600;font-family:var(--mono)}.badge-in{background:rgba(52,211,153,.12);color:var(--success)}.badge-out{background:rgba(251,191,36,.12);color:var(--warning)}
+  #tab-lists{flex-direction:row;overflow:hidden}.lists-sidebar{width:240px;border-right:1px solid var(--border);display:flex;flex-direction:column}.sidebar-toolbar{padding:10px;border-bottom:1px solid var(--border);display:flex;gap:5px}.icon-btn-sm{width:26px;height:26px;border-radius:6px;border:1px solid var(--border2);background:transparent;color:var(--text2);cursor:pointer}
+  .list-items{flex:1;overflow-y:auto;padding:6px}.list-item{padding:9px 10px;border-radius:8px;cursor:pointer;display:flex;align-items:center;gap:8px;margin-bottom:2px}.list-item.active{background:var(--accent-glow)}.list-item-dot{width:8px;height:8px;border-radius:50%}.dot-white{background:var(--success)}.dot-black{background:var(--danger)}.list-item-name{font-size:13px;font-weight:500;flex:1}.list-item-count{font-size:10px;font-family:var(--mono);color:var(--text3);background:var(--field);padding:1px 5px;border-radius:4px}
+  .lists-main{flex:1;display:flex;flex-direction:column;overflow:hidden}.lists-main-header{padding:12px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px}.lists-main-title{font-size:14px;font-weight:600;flex:1}.type-badge{padding:3px 9px;border-radius:20px;font-size:11px;font-weight:600}.type-white{background:rgba(52,211,153,.12);color:var(--success)}.type-black{background:rgba(244,63,94,.12);color:var(--danger)}
+  #tab-settings{flex-direction:row;overflow:hidden}.settings-nav{width:200px;border-right:1px solid var(--border);display:flex;flex-direction:column;padding:10px 8px;gap:2px}.snav-label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:var(--text3);padding:6px 8px 4px;margin-top:4px}.snav-item{padding:8px 10px;border-radius:8px;cursor:pointer;display:flex;align-items:center;gap:9px;font-size:13px;font-weight:500;color:var(--text2)}.snav-item.active{background:var(--accent-glow);color:var(--accent2)}
+  .settings-content{flex:1;overflow-y:auto;padding:20px 24px}.settings-pane{display:none}.settings-pane.active{display:block}.s-card{background:var(--card);border:1px solid var(--border);border-radius:12px;margin-bottom:14px}.s-card-header{padding:13px 16px;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text2);border-bottom:1px solid var(--border)}.s-card-body{padding:16px}.s-row{display:flex;align-items:center;padding:8px 0;gap:16px;border-bottom:1px solid var(--border)}.s-row:last-child{border-bottom:none}
+  .s-row-label{flex:1}.s-row-name{font-size:13px;font-weight:500}.s-row-desc{font-size:11.5px;color:var(--text3)}.s-input.sm{width:100px}.s-input.wide{width:280px}
+  .ch-layout{display:flex;gap:12px;height:100%}.ch-sidebar{width:180px;display:flex;flex-direction:column;gap:6px}.ch-list{flex:1;background:var(--field);border:1px solid var(--border);border-radius:10px;overflow:hidden}.ch-item{padding:9px 12px;font-size:12.5px;cursor:pointer;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:7px;color:var(--text2)}.ch-item.active{background:var(--accent-glow);color:var(--accent2)}.ch-item-dot{width:6px;height:6px;border-radius:50%;background:var(--success)}.ch-item-dot.off{background:var(--text3)}
+  .log-output{background:var(--field);border:1px solid var(--border);border-radius:8px;padding:12px;font-family:var(--mono);font-size:11px;color:var(--text2);height:260px;overflow-y:auto;line-height:1.7}.log-line.warn{color:var(--warning)}.log-line.err{color:var(--danger)}.log-line.ok{color:var(--success)}.log-ts{color:var(--text3)}
+  .live-dot{width:6px;height:6px;border-radius:50%;background:var(--success);box-shadow:0 0 5px var(--success)}
+</style>
 </head>
 <body>
-<div class="top">
-  <strong>ANPR Operator Dashboard</strong>
-  <span class="muted" id="health"></span>
-  <input id="apiBase" value="" placeholder="API base, напр. http://localhost:8080" style="min-width:260px"/>
-  <input id="videoBase" value="http://localhost:8091" placeholder="Video Gateway" style="min-width:220px"/>
-  <label class="muted"><input id="autoQos" type="checkbox" checked onchange="refreshChannels()"/> Auto QoS</label>
-  <button onclick="refreshAll()">Обновить</button>
+<div class="titlebar">
+  <div class="logo"><div class="logo-icon">🚗</div><div class="logo-text">ANPR <span>Desktop</span></div></div>
+  <div class="titlebar-tabs">
+    <div class="ttab active" data-tab="obs"><div class="dot"></div> Наблюдение</div>
+    <div class="ttab" data-tab="journal">Журнал</div>
+    <div class="ttab" data-tab="lists">Списки</div>
+    <div class="ttab" data-tab="settings">Настройки</div>
+  </div>
+  <div class="titlebar-right">
+    <input id="apiBase" class="api-input" placeholder="API" />
+    <input id="videoBase" class="api-input" value="http://localhost:8091" placeholder="Video" />
+    <div class="sys-stat"><span>CPU</span> <b id="cpuStat">12%</b></div>
+    <div class="sys-stat"><span>RAM</span> <b id="ramStat">38%</b></div>
+    <button class="icon-btn" title="Тема">☀</button>
+  </div>
 </div>
-
-<div class="wrap grid">
-  <section class="card">
-    <h3>Каналы и live tiles</h3>
-    <div class="row">
-      <input id="newName" placeholder="Имя канала" />
-      <input id="newSource" placeholder="RTSP/файл/индекс" />
-      <button onclick="createChannel()">Добавить канал</button>
+<div class="content">
+  <div class="tab-pane active" id="tab-obs">
+    <div class="obs-left">
+      <div class="obs-toolbar"><span class="obs-label">Сетка</span>
+        <select class="grid-select" id="gridSelect"><option value="1x1">1×1</option><option value="2x2" selected>2×2</option><option value="2x3">2×3</option><option value="3x3">3×3</option></select>
+        <div style="flex:1"></div><div class="live-dot"></div><span style="font-size:11px;color:var(--text3)" id="channelsCount">0 каналов</span>
+      </div>
+      <div class="video-grid" id="videoGrid"></div>
     </div>
-    <div class="tiles" id="tiles"></div>
-  </section>
-
-  <section class="card">
-    <h3>Live события</h3>
-    <div class="events" id="events"></div>
-    <h4>Детали события</h4>
-    <pre id="eventDetail" class="muted">Выберите событие в ленте</pre>
-  </section>
-
-  <section class="card">
-    <h3>Controller management</h3>
-    <div class="row">
-      <input id="ctrlName" placeholder="Название"/>
-      <input id="ctrlAddress" placeholder="Адрес"/>
-      <button onclick="createController()">Создать</button>
+    <div class="obs-right"><div class="panel-header" style="display:flex;align-items:center;gap:8px;"><span>Последние события</span><div style="flex:1"></div><div class="live-dot"></div></div><div class="event-feed" id="eventFeed"></div></div>
+  </div>
+  <div class="tab-pane" id="tab-journal">
+    <div class="filter-card">
+      <div class="filter-group"><div class="filter-label">Номер</div><input class="filter-input" id="fltPlate" placeholder="Поиск по фрагменту..." /></div>
+      <div class="filter-group"><div class="filter-label">Канал</div><select class="filter-input" id="fltChannel"><option value="">Все каналы</option></select></div>
+      <div style="display:flex;gap:7px;align-self:flex-end"><button class="btn btn-primary" id="btnFind">Найти</button><button class="btn btn-ghost" id="btnReset">Сброс</button><button class="btn btn-ghost" id="btnExport">📤 Экспорт</button></div>
     </div>
-    <pre id="controllers" class="muted"></pre>
-  </section>
-
-  <section class="card">
-    <h3>Data layer</h3>
-    <div class="row">
-      <button onclick="loadPolicy()">Policy</button>
-      <button onclick="runRetention()">Run retention</button>
-      <button onclick="window.open(api('/api/data/export/events.csv', true),'_blank')">Export CSV</button>
+    <div class="data-table-wrap"><div class="table-scroll"><table class="data-table"><thead><tr><th>Время</th><th>Канал</th><th>Страна</th><th>Направление</th><th>Номер</th><th>Уверенность</th><th>Источник</th></tr></thead><tbody id="journalBody"></tbody></table></div></div>
+  </div>
+  <div class="tab-pane" id="tab-lists">
+    <div class="lists-sidebar"><div class="panel-header">Списки номеров</div><div class="sidebar-toolbar"><button class="icon-btn-sm" id="addListBtn">+</button></div><div class="list-items" id="listItems"></div></div>
+    <div class="lists-main"><div class="lists-main-header"><div class="lists-main-title" id="listTitle">—</div><span class="type-badge type-white" id="listTypeBadge">Белый список</span><button class="btn btn-ghost" style="font-size:11px;padding:5px 12px;" id="addEntryBtn">+ Добавить</button><button class="btn btn-ghost" style="font-size:11px;padding:5px 12px;" id="exportListBtn">📤 Экспорт</button></div><div class="data-table-wrap" style="margin:12px;border-radius:10px;"><table class="data-table"><thead><tr><th>Номер</th><th>Комментарий</th></tr></thead><tbody id="entriesBody"></tbody></table></div></div>
+  </div>
+  <div class="tab-pane" id="tab-settings">
+    <div class="settings-nav"><div class="snav-label">Основное</div><div class="snav-item active" data-sp="general"><span>⚙</span> Общие</div><div class="snav-item" data-sp="channels"><span>📷</span> Каналы</div><div class="snav-item" data-sp="controllers"><span>🔌</span> Контроллеры</div><div class="snav-label">Разработка</div><div class="snav-item" data-sp="debug"><span>🐛</span> Debug</div></div>
+    <div class="settings-content">
+      <div class="settings-pane active" id="sp-general"><div class="s-card"><div class="s-card-header">Хранение данных</div><div class="s-card-body"><div class="s-row"><div class="s-row-label"><div class="s-row-name">Events retention days</div></div><input class="s-input sm" id="retEvents" type="number" /></div><div class="s-row"><div class="s-row-label"><div class="s-row-name">Media retention days</div></div><input class="s-input sm" id="retMedia" type="number" /></div><div class="s-row"><div class="s-row-label"><div class="s-row-name">Screenshots MB</div></div><input class="s-input sm" id="retScreens" type="number" /></div></div></div><button class="btn btn-primary" id="savePolicyBtn">Сохранить изменения</button></div>
+      <div class="settings-pane" id="sp-channels"><div class="ch-layout"><div class="ch-sidebar"><div class="ch-list" id="channelsList"></div></div><div style="flex:1"><div class="s-card"><div class="s-card-header">Добавить канал</div><div class="s-card-body"><div class="s-row"><div class="s-row-label"><div class="s-row-name">Название</div></div><input class="s-input" id="newName"></div><div class="s-row"><div class="s-row-label"><div class="s-row-name">RTSP/source</div></div><input class="s-input wide" id="newSource"></div></div></div><button class="btn btn-primary" id="createChannelBtn">Сохранить канал</button></div></div></div>
+      <div class="settings-pane" id="sp-controllers"><div class="s-card"><div class="s-card-header">Контроллеры</div><div class="s-card-body"><div class="s-row"><div class="s-row-label"><div class="s-row-name">Название</div></div><input class="s-input" id="ctrlName"></div><div class="s-row"><div class="s-row-label"><div class="s-row-name">Адрес</div></div><input class="s-input" id="ctrlAddress"></div></div></div><button class="btn btn-primary" id="createControllerBtn">Сохранить контроллер</button><div class="s-card"><div class="s-card-body"><div class="log-output" id="controllersDump"></div></div></div></div>
+      <div class="settings-pane" id="sp-debug"><div class="s-card"><div class="s-card-header">Лог приложения</div><div class="s-card-body"><div class="log-output" id="debugLog"></div></div></div></div>
     </div>
-    <pre id="policy" class="muted"></pre>
-  </section>
+  </div>
 </div>
-
 <script>
 const players = new Map();
-const tileObserver = new IntersectionObserver(onTileVisibility, {threshold:[0,0.25,0.6]});
-const tileVisibility = new Map();
-const tileActivity = new Map();
-const tileRatios = new Map();
-const profileLocks = new Map();
-const lastAutoSwitch = new Map();
-
-function api(path, abs=false){
-  const base = document.getElementById('apiBase').value.trim();
-  if (abs) return `${base}${path}`;
-  return `${base}${path}`;
-}
+const state = {channels: [], events: [], lists: [], selectedListId: null, allEvents: []};
+function api(path){ return `${document.getElementById('apiBase').value.trim()}${path}`; }
 function vapi(path){ return `${document.getElementById('videoBase').value.trim()}${path}`; }
-
-async function jfetch(url, method='GET', body=null){
-  const r = await fetch(url, {method, headers:{'Content-Type':'application/json'}, body: body ? JSON.stringify(body): null});
-  if(!r.ok) throw new Error(await r.text());
-  return await r.json();
-}
-
-
-
-function onTileVisibility(entries){
-  for(const entry of entries){
-    const id = Number(entry.target.dataset.channelId || 0);
-    if(!id) continue;
-    const ratio = entry.intersectionRatio || 0;
-    tileRatios.set(id, ratio);
-    const isActive = tileActivity.get(id) === true;
-    const profile = isActive ? 'high' : (ratio >= 0.6 ? 'medium' : 'low');
-    maybeAutoSwitch(id, profile);
-  }
-}
-
-function stateBadge(state){
-  if(state==='running') return `<span class='state run'>running</span>`;
-  if(state==='error') return `<span class='state err'>error</span>`;
-  return `<span class='state stop'>${state||'stopped'}</span>`;
-}
-
-function attachHls(videoEl, url){
-  if(videoEl.dataset.url===url) return;
-  videoEl.dataset.url=url;
-  if(players.get(videoEl.id)){ try{players.get(videoEl.id).destroy();}catch(e){} }
-  if(window.Hls && Hls.isSupported()){
-    const hls = new Hls({lowLatencyMode:true});
-    hls.loadSource(url);
-    hls.attachMedia(videoEl);
-    players.set(videoEl.id,hls);
-  } else {
-    videoEl.src=url;
-  }
-}
-
-async function ensureVideo(channel){
-  try{
-    await jfetch(vapi(`/video/channels/${channel.id}/start`), 'POST', {source: channel.source, profile:'low'});
-  }catch(e){/* already started or gateway unavailable */}
-}
-
-async function setProfile(id, profile, options={}){
-  const source = options.source || 'manual';
-  const refresh = options.refresh ?? (source === 'manual');
-  if(source === 'manual'){
-    profileLocks.set(id, Date.now() + 120000);
-  }
-  await jfetch(vapi(`/video/channels/${id}/profile`), 'POST', {profile});
-  if(refresh) await refreshChannels();
-}
-
-function maybeAutoSwitch(id, profile){
-  if(!document.getElementById('autoQos')?.checked) return;
-  const lockUntil = profileLocks.get(id) || 0;
-  if(Date.now() < lockUntil) return;
-  const lastAt = lastAutoSwitch.get(id) || 0;
-  if(Date.now() - lastAt < 4000) return;
-  const prev = tileVisibility.get(id);
-  if(prev === profile) return;
-  tileVisibility.set(id, profile);
-  lastAutoSwitch.set(id, Date.now());
-  setProfile(id, profile, {source:'auto', refresh:false}).catch(()=>{});
-}
-
-async function startChannel(id){ await jfetch(api(`/api/channels/${id}/start`),'POST'); refreshChannels(); }
-async function stopChannel(id){ await jfetch(api(`/api/channels/${id}/stop`),'POST'); refreshChannels(); }
-
-async function refreshHealth(){
-  try{
-    const health = await jfetch(api('/api/health'));
-    document.getElementById('health').textContent = `API: ${health.status}, channels=${health.channels_total}, running=${health.channels_running}`;
-  }catch(e){document.getElementById('health').textContent = `API error: ${e}`;}
-}
+async function jfetch(url, method='GET', body=null){ const r = await fetch(url,{method,headers:{'Content-Type':'application/json'},body: body ? JSON.stringify(body) : null}); if(!r.ok) throw new Error(await r.text()); return r.status===204?null:r.json(); }
+function flagByCountry(code){ return ({RU:'🇷🇺',BY:'🇧🇾',KZ:'🇰🇿'})[String(code||'').toUpperCase()] || '🏳️'; }
+function switchTab(name){ document.querySelectorAll('.ttab').forEach(el=>el.classList.toggle('active', el.dataset.tab===name)); document.querySelectorAll('.tab-pane').forEach(p=>p.classList.remove('active')); document.getElementById(`tab-${name}`).classList.add('active'); }
+function switchSettings(name){ document.querySelectorAll('.snav-item').forEach(el=>el.classList.toggle('active', el.dataset.sp===name)); document.querySelectorAll('.settings-pane').forEach(p=>p.classList.remove('active')); document.getElementById(`sp-${name}`).classList.add('active'); }
 
 async function refreshChannels(){
-  const channels = await jfetch(api('/api/channels'));
-  const tiles = document.getElementById('tiles');
-  tiles.innerHTML='';
-  for(const ch of channels){
-    const m = ch.metrics||{};
-    const div = document.createElement('div');
-    div.className='tile';
-    div.dataset.channelId=String(ch.id);
-    div.innerHTML = `
-      <div class='title'><span>#${ch.id} ${ch.name}</span>${stateBadge(m.state)}</div>
-      <div class='muted'>FPS: ${(m.fps||0).toFixed(1)} | latency: ${(m.latency_ms||0).toFixed(1)} ms</div>
-      <video id='v-${ch.id}' autoplay muted controls playsinline></video>
-      <div class='row' style='margin-top:6px'>
-        <button onclick='startChannel(${ch.id})'>Start</button>
-        <button onclick='stopChannel(${ch.id})'>Stop</button>
-        <button onclick='setProfile(${ch.id},"low")'>low</button>
-        <button onclick='setProfile(${ch.id},"medium")'>medium</button>
-        <button onclick='setProfile(${ch.id},"high")'>high</button>
-      </div>
-    `;
-    tiles.appendChild(div);
-    tileObserver.observe(div);
-    div.addEventListener('mouseenter', ()=>{ tileActivity.set(ch.id, true); maybeAutoSwitch(ch.id, 'high'); });
-    div.addEventListener('mouseleave', ()=>{
-      tileActivity.set(ch.id, false);
-      const ratio = tileRatios.get(ch.id) || 0;
-      const fallbackProfile = ratio >= 0.6 ? 'medium' : 'low';
-      maybeAutoSwitch(ch.id, fallbackProfile);
-    });
-    await ensureVideo(ch);
+  state.channels = await jfetch(api('/api/channels'));
+  renderVideoGrid(); renderChannelsList(); fillChannelFilter();
+}
+async function ensureVideo(ch){ try{ await jfetch(vapi(`/video/channels/${ch.id}/start`),'POST',{source:ch.source,profile:'low'});}catch(_e){} }
+function gridConfig(v){ if(v==='1x1') return [1,1]; if(v==='2x3') return [2,3]; if(v==='3x3') return [3,3]; return [2,2]; }
+async function renderVideoGrid(){
+  const grid = document.getElementById('videoGrid'); const [rows, cols] = gridConfig(document.getElementById('gridSelect').value);
+  grid.style.gridTemplateColumns = `repeat(${cols}, 1fr)`; grid.style.gridTemplateRows = `repeat(${rows}, 1fr)`;
+  grid.innerHTML = '';
+  const visible = state.channels.slice(0, rows*cols);
+  document.getElementById('channelsCount').textContent = `${state.channels.length} канала`;
+  for(const [idx,ch] of visible.entries()){
+    const running = (ch.metrics||{}).state === 'running';
+    const cell = document.createElement('div'); cell.className = `video-cell ${idx===0?'active':''}`;
+    cell.innerHTML = `<div class='video-cell-bg'></div><video id='v-${ch.id}' autoplay muted playsinline controls></video><div class='cam-no-signal'><svg width='32' height='32' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.5'><path d='M23 7l-7 5 7 5V7z'/><rect x='1' y='5' width='15' height='14' rx='2'/></svg><p>${running?'Идёт захват...':'Нет сигнала'}</p></div><div class='cam-label'>CAM-${String(ch.id).padStart(2,'0')} · ${ch.name}</div><div class='cam-status ${running?'live':'off'}'></div><div class='cam-plate' id='plate-${ch.id}'></div>`;
+    grid.appendChild(cell); await ensureVideo(ch);
   }
-
-  try{
-    const vchannels = await jfetch(vapi('/video/channels'));
-    for(const key of Object.keys(vchannels)){
-      const item = vchannels[key];
-      const el = document.getElementById(`v-${item.channel_id}`);
-      if(!el) continue;
-      attachHls(el, `${document.getElementById('videoBase').value}${item.hls_url}`);
-    }
-  }catch(e){}
+  try{ const vchs = await jfetch(vapi('/video/channels')); Object.values(vchs).forEach(item=>{ const el = document.getElementById(`v-${item.channel_id}`); if(!el) return; const url = `${document.getElementById('videoBase').value}${item.hls_url}`; if(el.dataset.url===url) return; el.dataset.url=url; const old=players.get(el.id); if(old){try{old.destroy();}catch(_e){}} if(window.Hls && Hls.isSupported()){const h=new Hls({lowLatencyMode:true}); h.loadSource(url); h.attachMedia(el); players.set(el.id,h);} else el.src=url; }); }catch(_e){}
 }
 
-async function createChannel(){
-  await jfetch(api('/api/channels'),'POST',{name:document.getElementById('newName').value,source:document.getElementById('newSource').value});
-  refreshChannels();
+function pushEvent(ev){
+  state.events.unshift(ev); if(state.events.length>80) state.events.pop();
+  const feed = document.getElementById('eventFeed'); feed.innerHTML='';
+  state.events.slice(0,25).forEach((item,i)=>{ const conf = Number(item.confidence||0); const div=document.createElement('div'); div.className=`ev-item ${i===0?'hot':''}`; div.innerHTML = `<div class='ev-flag'>${flagByCountry(item.country)}</div><div class='ev-body'><div class='ev-plate'>${item.plate||'—'}</div><div class='ev-meta'>${item.channel||`CAM-${item.channel_id||''}`} · <span>${new Date(item.timestamp||Date.now()).toLocaleTimeString()}</span></div></div><div class='ev-conf ${conf<0.85?'warn':''}'>${conf.toFixed(2)}</div>`; div.onclick=()=>highlightPlate(item); feed.appendChild(div); });
+  addDebug(`[INFO] event: ${ev.plate||'-'} conf=${Number(ev.confidence||0).toFixed(2)}`,'ok');
+}
+function highlightPlate(ev){ const ch = state.channels.find(c=>String(c.name)===String(ev.channel)||Number(c.id)===Number(ev.channel_id)); if(!ch) return; const plate = document.getElementById(`plate-${ch.id}`); if(!plate) return; plate.textContent = ev.plate||''; plate.style.display='block'; setTimeout(()=>plate.style.display='none',3000); }
+
+async function loadJournal(){
+  state.allEvents = await jfetch(api('/api/events?limit=500')); renderJournal();
+}
+function renderJournal(){
+  const needle=(document.getElementById('fltPlate').value||'').toUpperCase(); const chan=document.getElementById('fltChannel').value;
+  const rows = state.allEvents.filter(e => (!needle || String(e.plate||'').toUpperCase().includes(needle)) && (!chan || String(e.channel||e.channel_id||'')===chan));
+  const body = document.getElementById('journalBody'); body.innerHTML='';
+  rows.forEach(ev=>{ const conf=Number(ev.confidence||0); const tr=document.createElement('tr'); tr.innerHTML=`<td>${new Date(ev.timestamp).toLocaleTimeString()}</td><td>${ev.channel||`CAM-${ev.channel_id||''}`}</td><td>${flagByCountry(ev.country)} ${ev.country||''}</td><td><span class='badge ${(ev.direction||'in')==='in'?'badge-in':'badge-out'}'>${(ev.direction||'in')==='in'?'→ Въезд':'← Выезд'}</span></td><td class='plate-cell'>${ev.plate||''}</td><td class='conf-cell' style='color:${conf<0.85?'var(--warning)':'var(--success)'}'>${conf.toFixed(2)}</td><td>${ev.source||''}</td>`; tr.onclick=()=>highlightPlate(ev); body.appendChild(tr); });
 }
 
-async function createController(){
-  const body={name:document.getElementById('ctrlName').value,type:'DTWONDER2CH',address:document.getElementById('ctrlAddress').value,password:'0',relays:[{mode:'pulse',timer_seconds:1,hotkey:''},{mode:'pulse',timer_seconds:1,hotkey:''}]};
-  await jfetch(api('/api/controllers'),'POST',body);
-  loadControllers();
-}
+async function loadLists(){ state.lists = await jfetch(api('/api/lists')); renderLists(); }
+function renderLists(){ const items = document.getElementById('listItems'); items.innerHTML=''; state.lists.forEach((l,idx)=>{ const div=document.createElement('div'); div.className=`list-item ${l.id===state.selectedListId || (!state.selectedListId && idx===0)?'active':''}`; if(!state.selectedListId && idx===0) state.selectedListId=l.id; div.innerHTML=`<div class='list-item-dot ${l.type==='white'?'dot-white':'dot-black'}'></div><div class='list-item-name'>${l.name}</div><div class='list-item-count'>…</div>`; div.onclick=()=>{ state.selectedListId=l.id; renderLists(); loadEntries(l.id); }; items.appendChild(div); }); if(state.selectedListId) loadEntries(state.selectedListId); }
+async function loadEntries(listId){ const rows=await jfetch(api(`/api/lists/${listId}/entries`)); const list=state.lists.find(x=>x.id===listId); document.getElementById('listTitle').textContent=list?list.name:'—'; const b=document.getElementById('listTypeBadge'); b.textContent=list?.type==='black'?'Черный список':'Белый список'; b.className=`type-badge ${list?.type==='black'?'type-black':'type-white'}`; const body=document.getElementById('entriesBody'); body.innerHTML=''; rows.forEach(r=>{ const tr=document.createElement('tr'); tr.innerHTML=`<td class='plate-cell'>${r.plate}</td><td>${r.comment||''}</td>`; body.appendChild(tr); }); }
 
-async function loadControllers(){
-  const data = await jfetch(api('/api/controllers'));
-  document.getElementById('controllers').textContent = JSON.stringify(data,null,2);
-}
+async function loadPolicy(){ const p=await jfetch(api('/api/data/policy')); document.getElementById('retEvents').value=p.events_retention_days; document.getElementById('retMedia').value=p.media_retention_days; document.getElementById('retScreens').value=p.max_screenshots_mb; }
+async function savePolicy(){ const cur=await jfetch(api('/api/data/policy')); await jfetch(api('/api/data/policy'),'PUT',{auto_cleanup_enabled:cur.auto_cleanup_enabled,cleanup_interval_minutes:cur.cleanup_interval_minutes,export_dir:cur.export_dir,events_retention_days:Number(document.getElementById('retEvents').value),media_retention_days:Number(document.getElementById('retMedia').value),max_screenshots_mb:Number(document.getElementById('retScreens').value)}); addDebug('[OK] policy saved','ok'); }
 
-async function loadPolicy(){
-  const p = await jfetch(api('/api/data/policy'));
-  document.getElementById('policy').textContent = JSON.stringify(p,null,2);
-}
+function renderChannelsList(){ const box=document.getElementById('channelsList'); box.innerHTML=''; state.channels.forEach((c,idx)=>{ const run=(c.metrics||{}).state==='running'; const row=document.createElement('div'); row.className=`ch-item ${idx===0?'active':''}`; row.innerHTML=`<div class='ch-item-dot ${run?'':'off'}'></div> CAM-${String(c.id).padStart(2,'0')} · ${c.name}`; box.appendChild(row); }); }
+async function createChannel(){ await jfetch(api('/api/channels'),'POST',{name:document.getElementById('newName').value,source:document.getElementById('newSource').value}); await refreshChannels(); }
+async function createController(){ const body={name:document.getElementById('ctrlName').value,type:'DTWONDER2CH',address:document.getElementById('ctrlAddress').value,password:'0',relays:[{mode:'pulse',timer_seconds:1,hotkey:''},{mode:'pulse',timer_seconds:1,hotkey:''}]}; await jfetch(api('/api/controllers'),'POST',body); await loadControllers(); }
+async function loadControllers(){ const d=await jfetch(api('/api/controllers')); document.getElementById('controllersDump').textContent = JSON.stringify(d,null,2); }
 
-async function runRetention(){
-  const p = await jfetch(api('/api/data/retention/run'),'POST');
-  document.getElementById('policy').textContent = JSON.stringify(p,null,2);
-}
+function addDebug(msg, type='info'){ const log=document.getElementById('debugLog'); const line=document.createElement('div'); line.className=`log-line ${type}`; line.innerHTML=`<span class='log-ts'>${new Date().toLocaleTimeString()}</span> ${msg}`; log.prepend(line); }
+async function setupStream(){ const es = new EventSource(api('/api/events/stream')); es.onmessage = m=>{ try{ pushEvent(JSON.parse(m.data)); }catch(_e){} }; es.onerror = ()=>addDebug('[WARN] stream reconnect','warn'); }
+function fillChannelFilter(){ const sel=document.getElementById('fltChannel'); const cur=sel.value; sel.innerHTML='<option value="">Все каналы</option>'; state.channels.forEach(c=>{ const o=document.createElement('option'); o.value=String(c.channel||c.id); o.textContent=`CAM-${String(c.id).padStart(2,'0')}`; sel.appendChild(o); }); sel.value=cur; }
 
-function setupEvents(){
-  const feed = document.getElementById('events');
-  const detail = document.getElementById('eventDetail');
-  const es = new EventSource(api('/api/events/stream'));
-  es.onmessage = (msg)=>{
-    const ev = JSON.parse(msg.data);
-    const div = document.createElement('div');
-    div.className='event';
-    div.innerHTML = `<strong>${ev.plate}</strong> <span class='muted'>${ev.channel}</span><br><span class='muted'>${new Date(ev.timestamp).toLocaleString()} conf=${(ev.confidence||0).toFixed(2)}</span>`;
-    div.onclick = ()=>{ detail.textContent = JSON.stringify(ev,null,2); };
-    feed.prepend(div);
-  };
-}
+document.querySelectorAll('.ttab').forEach(el=>el.onclick=()=>switchTab(el.dataset.tab));
+document.querySelectorAll('.snav-item').forEach(el=>el.onclick=()=>switchSettings(el.dataset.sp));
+document.getElementById('gridSelect').onchange=renderVideoGrid;
+document.getElementById('btnFind').onclick=renderJournal; document.getElementById('btnReset').onclick=()=>{document.getElementById('fltPlate').value='';document.getElementById('fltChannel').value='';renderJournal();}; document.getElementById('btnExport').onclick=()=>window.open(api('/api/data/export/events.csv'),'_blank');
+document.getElementById('addListBtn').onclick=async()=>{ const name=prompt('Название списка'); if(!name) return; const type=prompt('Тип: white/black','white')||'white'; await jfetch(api('/api/lists'),'POST',{name,type}); await loadLists(); };
+document.getElementById('addEntryBtn').onclick=async()=>{ if(!state.selectedListId) return; const plate=prompt('Номер'); if(!plate) return; const comment=prompt('Комментарий','')||''; await jfetch(api(`/api/lists/${state.selectedListId}/entries`),'POST',{plate,comment}); await loadEntries(state.selectedListId); };
+document.getElementById('exportListBtn').onclick=()=>window.open(api('/api/data/export/events.csv'),'_blank');
+document.getElementById('savePolicyBtn').onclick=savePolicy; document.getElementById('createChannelBtn').onclick=createChannel; document.getElementById('createControllerBtn').onclick=createController;
 
-async function refreshAll(){
-  await refreshHealth();
-  await refreshChannels();
-  await loadControllers();
-  await loadPolicy();
-}
-
-document.getElementById('apiBase').value = window.location.origin;
-refreshAll();
-setupEvents();
-setInterval(refreshHealth,5000);
-setInterval(refreshChannels,8000);
+setInterval(()=>{ document.getElementById('cpuStat').textContent = `${Math.round(8 + Math.random()*12)}%`; document.getElementById('ramStat').textContent = `${Math.round(35 + Math.random()*8)}%`; },2000);
+(async function init(){ document.getElementById('apiBase').value = window.location.origin; await refreshChannels(); await loadJournal(); await loadLists(); await loadPolicy(); await loadControllers(); setupStream(); addDebug('[INFO] UI initialized'); setInterval(refreshChannels,8000); })();
 </script>
 </body>
 </html>
