@@ -1,0 +1,61 @@
+version: '3.9'
+services:
+  api:
+    image: python:3.13-slim
+    working_dir: /app
+    volumes:
+      - ../:/app
+    environment:
+      POSTGRES_DSN: "postgresql://anpr:anpr@postgres:5432/anpr"
+    command: bash -lc "pip install -r requirements.txt && uvicorn apps.api.main:app --host 0.0.0.0 --port 8080"
+    ports:
+      - "8080:8080"
+
+  video_gateway:
+    image: python:3.13-slim
+    working_dir: /app
+    volumes:
+      - ../:/app
+    environment:
+      WEBRTC_ENABLED: "true"
+      WEBRTC_PROVIDER: "mediamtx"
+      WEBRTC_SIGNALING_BASE_URL: "http://mediamtx:8889"
+      WEBRTC_WHEP_PATH_TEMPLATE: "/whep/channel_{channel_id}"
+      WEBRTC_PLAY_URL_TEMPLATE: "http://localhost:8889/channel_{channel_id}"
+    command: bash -lc "apt-get update && apt-get install -y ffmpeg && pip install -r requirements.txt && uvicorn apps.video_gateway.main:app --host 0.0.0.0 --port 8091"
+    ports:
+      - "8091:8091"
+    depends_on:
+      - mediamtx
+
+  retention_worker:
+    image: python:3.13-slim
+    working_dir: /app
+    volumes:
+      - ../:/app
+    environment:
+      POSTGRES_DSN: "postgresql://anpr:anpr@postgres:5432/anpr"
+    command: bash -lc "pip install -r requirements.txt && uvicorn apps.worker.main:app --host 0.0.0.0 --port 8092"
+    ports:
+      - "8092:8092"
+
+  mediamtx:
+    image: bluenviron/mediamtx:latest
+    ports:
+      - "8554:8554"
+      - "8889:8889"
+      - "8189:8189"
+
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: anpr
+      POSTGRES_USER: anpr
+      POSTGRES_PASSWORD: anpr
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+volumes:
+  pgdata:

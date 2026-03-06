@@ -11,7 +11,9 @@
     "confidence_threshold": 0.6
   },
   "detector": {
-    "confidence_threshold": 0.5
+    "confidence_threshold": 0.5,
+    "bbox_padding_ratio": 0.08,
+    "min_padding_pixels": 2
   },
   "inference": {
     "workers": 2,
@@ -31,10 +33,18 @@
     }
   },
   "storage": {
-    "db_dir": "db",
+    "db_dir": "data/db",
     "database_file": "anpr.db",
-    "screenshots_dir": "screenshots",
-    "logs_dir": "logs"
+    "screenshots_dir": "data/screenshots",
+    "logs_dir": "logs",
+    "auto_cleanup_enabled": true,
+    "cleanup_interval_minutes": 30,
+    "events_retention_days": 30,
+    "media_retention_days": 14,
+    "max_screenshots_mb": 4096,
+    "export_dir": "data/exports",
+    "dual_write_enabled": false,
+    "postgres_dsn": ""
   },
   "tracking": {
     "best_shots": 10,
@@ -51,10 +61,29 @@
   },
   "plates": {
     "config_dir": "config/countries",
-    "enabled_countries": ["RU", "UA", "BY", "KZ"]
+    "enabled_countries": [
+      "RU",
+      "UA",
+      "BY",
+      "KZ"
+    ]
   },
   "logging": {
     "level": "INFO",
     "retention_days": 30
-  }
+  },
+  "settings_version": 2,
+  "theme": "dark",
+  "time": {
+    "timezone": "UTC+00:00",
+    "offset_minutes": 0
+  },
+  "debug": {
+    "show_detection_boxes": false,
+    "show_ocr_text": false,
+    "show_direction_tracks": false,
+    "show_channel_metrics": true,
+    "log_panel_enabled": false
+  },
+  "controllers": []
 }
