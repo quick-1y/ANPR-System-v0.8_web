@@ -630,6 +630,21 @@ class SettingsManager:
             storage = self.settings.get("storage", {})
             return storage.get("logs_dir", "logs")
 
+    def get_storage_settings(self) -> Dict[str, Any]:
+        with self._file_lock:
+            if self._fill_storage_defaults(self.settings, self._storage_defaults()):
+                settings_snapshot = copy.deepcopy(self.settings)
+                self._save(settings_snapshot)
+            return copy.deepcopy(self.settings.get("storage", {}))
+
+    def save_storage_settings(self, storage_settings: Dict[str, Any]) -> None:
+        with self._file_lock:
+            current = self.settings.get("storage", {})
+            current.update(storage_settings)
+            self.settings["storage"] = current
+            settings_snapshot = copy.deepcopy(self.settings)
+        self._save(settings_snapshot)
+
     def get_log_retention_days(self) -> int:
         with self._file_lock:
             logging_config = self.settings.get("logging", {})

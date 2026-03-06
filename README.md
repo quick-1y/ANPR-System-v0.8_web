@@ -1,12 +1,62 @@
 # ANPR System - Automatic Number Plate Recognition
 
 ![Python](https://img.shields.io/badge/Python-3.13-blue.svg)
-![PyQt5](https://img.shields.io/badge/GUI-PyQt5-green.svg)
 ![YOLOv8](https://img.shields.io/badge/Detection-YOLOv8-red.svg)
 ![CRNN](https://img.shields.io/badge/OCR-CRNN-orange.svg)
 ![SQLite](https://img.shields.io/badge/Database-SQLite-lightgrey.svg)
 
-Десктопное приложение для автоматического распознавания автомобильных номеров с поддержкой многоканального видео, локальной базой данных и интеллектуальной обработкой в реальном времени.
+Web-first сервис для автоматического распознавания автомобильных номеров с server-side обработкой многоканального видео, API и операторской web-панелью.
+
+## 🔄 Web-first миграция (v0.8)
+
+В версии v0.8 начата поэтапная миграция с desktop-архитектуры на web-first сервисную модель.
+
+### Что уже реализовано
+- Добавлен backend API сервис `apps/api/main.py` (FastAPI) для управления каналами, ROI, списками и lifecycle каналов.
+- Добавлен live-поток событий распознавания через SSE: `GET /api/events/stream`.
+- Добавлен web MVP интерфейс оператора `apps/web/index.html` (каналы, статусы, события, ROI, списки).
+- Добавлен независимый runtime каналов `packages/anpr_core/channel_runtime.py` с отдельным lifecycle на канал.
+- Добавлен сервис `apps/video_gateway/main.py` для server-side видео: HLS live-preview, профили качества `low/medium/high`, переключение профиля на лету, и WebRTC discovery-контракт для внешнего SFU/медиасервера.
+- Добавлен эксплуатационный data layer: retention/rotation/export через `apps/api/data_lifecycle.py` и API `/api/data/*` (политики хранения, ручной запуск очистки, экспорт CSV/ZIP).
+- Удалён desktop UI (`app.py`, `anpr/ui`, legacy `anpr/workers`) и зависимость `PyQt5`; продуктовый интерфейс теперь только web.
+- Retention scheduler вынесен в отдельный сервис `apps/worker/main.py` для production.
+- Подготовлен переход на PostgreSQL: dual-write опции (`storage.dual_write_enabled`, `storage.postgres_dsn`), схема `infra/postgres/schema.sql`, скрипт миграции `scripts/sync_sqlite_to_postgres.py`.
+
+### Запуск web MVP
+```bash
+uvicorn apps.api.main:app --host 0.0.0.0 --port 8080
+uvicorn apps.video_gateway.main:app --host 0.0.0.0 --port 8091
+```
+Открыть: `http://localhost:8080` (UI/API) и `http://localhost:8091/video/health` (Video Gateway).
+
+### Актуальная структура проекта (переходный этап)
+```text
+ANPR-System-v0.8/
+├── apps/
+│   ├── api/
+│   │   ├── main.py             # web API + SSE + data lifecycle endpoints
+│   │   └── data_lifecycle.py   # retention/rotation/export сервис
+│   ├── video_gateway/
+│   │   └── main.py             # HLS gateway + quality profiles + WebRTC discovery
+│   ├── worker/
+│   │   └── main.py             # retention worker service
+│   └── web/
+│       └── index.html          # web UI MVP
+├── packages/
+│   └── anpr_core/
+│       ├── channel_runtime.py  # независимая обработка каналов
+│       └── event_bus.py        # live event bus
+├── docs/
+│   └── migration_web_first.md  # аудит, mapping и план миграции
+├── infra/
+│   ├── docker-compose.yml
+│   └── postgres/
+│       └── schema.sql          # схема PostgreSQL для rolling migration
+├── scripts/
+│   └── sync_sqlite_to_postgres.py
+└── anpr/                       # существующий core/infra (без desktop UI)
+```
+
 
 ## 🚀 Основные возможности
 
@@ -22,7 +72,6 @@
 - **Валидация номеров** — постобработка, коррекция OCR-ошибок и фильтрация по форматам стран с отображением флагов
 - **Автоматическое восстановление** — переподключение при потере сигнала и плановый restart потоков
 - **Интуитивный редактор ROI** — графическое выделение зоны распознавания прямо на preview
-- **Интеллектуальный кэш UI** — пул QPixmap и LRU-кэш изображений событий с контролем потребления памяти
 - **Гибкая настройка времени** — коррекция часового пояса и смещения для корректного отображения меток времени
 - **Глобальный режим Debug** — единые переключатели оверлеев (рамки, OCR, треки), отдельный переключатель видимости метрик каналов и онлайн-панель логов в «Наблюдении», управляется отдельной вкладкой Debug в настройках
 - **Асинхронное логирование** — почасовая ротация логов в отдельной папке и автоматическая очистка по сроку хранения
@@ -60,17 +109,19 @@ pip install torch==2.8.0 torchvision==0.23.0 torchaudio==2.8.0 --index-url https
 
 ## 🎮 Быстрый старт
 
-### Графический интерфейс
+### Web сервисы
 ```bash
-python app.py
+uvicorn apps.api.main:app --host 0.0.0.0 --port 8080
+uvicorn apps.video_gateway.main:app --host 0.0.0.0 --port 8091
+uvicorn apps.worker.main:app --host 0.0.0.0 --port 8092
 ```
 
 ## 🧹 Завершение работы
-- Закрытие окна или выход через системное меню останавливает все фоновые `ChannelWorker`, дожидается завершения их задач и при необходимости принудительно завершает общий процессный пул инференса. Это предотвращает зависание фоновых процессов Python и рост потребления ОЗУ после закрытия приложения.
+- Остановка web-сервисов (`api`, `video_gateway`, `worker`) корректно завершает фоновые задачи и циклы retention/streaming.
 
 ## 🖥️ Интерфейс приложения
 
-### 1. Вкладка "Наблюдение"
+### Legacy desktop UI (удалён на этапе 7)
 - **Сетка просмотра** — выбор компоновки (1×1, 1×2, 2×2, 2×3, 3×3) с возможностью фокуса на один канал
 - **Панель каналов** — отображение видеопотоков с Drag&Drop перестановкой, индикатором движения и последним распознанным номером (занимает 3/4 ширины)
 - **Детали события** — предпросмотр полного кадра, кропа номера и метаданных (время, канал, страна, уверенность)
@@ -111,7 +162,7 @@ python app.py
 
 ```
 ┌─────────────────────────────────────────────┐
-│ Presentation Layer (GUI)                    │ ← main_window.py, app.py
+│ Presentation Layer (GUI)                    │ ← удалён на этапе 7
 ├─────────────────────────────────────────────┤
 │ Application Layer (Coordinators)            │ ← channel_worker.py, factory.py
 ├─────────────────────────────────────────────┤
@@ -253,7 +304,6 @@ flowchart TD
 ```
 ANPR-System-v0.7/
 ├── .gitignore                # Шаблон игнорирования временных файлов и артефактов
-├── app.py                    # Точка входа (GUI)
 ├── requirements.txt          # Зависимости Python
 ├── settings.json             # Конфигурация приложения (автоматически создаётся; каналы, ROI, фильтры)
 │
@@ -346,11 +396,8 @@ ANPR-System-v0.7/
     └── workers/              # Фоновые процессы
         ├── __init__.py
         ├── channel_worker.py         # Оркестрация жизненного цикла канала
-        ├── frame_source.py           # Подключение/чтение видеопотока и retry-логика
-        ├── inference_scheduler.py    # Планирование инференса (stride/shared memory)
-        ├── track_lifecycle_service.py # Сервис истории треков и отрисовки направлений
-        ├── event_emit_service.py     # Сервис записи и эмита событий в UI
-        └── types.py                  # TypedDict/dataclass контракты воркера
+        ├── event_sink.py             # Dual-write sink (SQLite + optional PostgreSQL)
+        └── channel_runtime.py        # Web runtime каналов
 ```
 
 ## 🛠️ Разработка
@@ -380,10 +427,9 @@ ANPR-System-v0.7/
 - **Консенсусное распознавание** — голосование по нескольким кадрам трека для надёжности
 - **Подавление повторов** — таймер кулдауна в `ANPRPipeline` с единым кэшем на канал внутри процесса инференса; UI-воркер не добавляет дополнительный слой подавления
 - **Батчевый OCR** — группировка кропов номеров в батчи для ускорения инференса CRNN
-- **Пул QPixmap и LRU-кэш** — повторное использование буферов отрисовки и умное управление памятью для изображений событий (`anpr/ui/services/image_cache_service.py`)
-- **Qt-мост логирования UI** — безопасная доставка сообщений логов в UI-поток через `LogSignalEmitter` и `QtLogHandler` (`anpr/ui/services/ui_logging_service.py`)
+- **Web-first поток событий** — live обновления в операторской панели через SSE/Web API без desktop GUI-зависимостей.
 - **Process Pool для OCR** — изоляция загрузки моделей и инференса в отдельных процессах для стабильности
-- **Инфраструктура без зависимостей от UI** — `EventWriter` отвечает только за сохранение скриншотов и запись в БД, а формирование `QImage` для интерфейса происходит в `ChannelWorker`.
+- **Инфраструктура без desktop UI** — серверные сервисы работают независимо, интерфейс реализован в web-панели.
 - **Настройки детектора передаются явно** — порог уверенности YOLO задаётся при создании детектора из конфигурации, без обращения к глобальному синглтону.
 
 ## 🔍 Поиск и фильтрация (Вкладка "Журнал")
@@ -405,3 +451,19 @@ ANPR-System-v0.7/
 ## 📄 Лицензия
 
 MIT License
+
+
+## 📌 Статус этапов миграции
+- ✅ Этап 0: аудит
+- ✅ Этап 1: архитектурный план
+- ✅ Этап 2: core extraction (MVP)
+- ✅ Этап 3: event pipeline + telemetry
+- ✅ Этап 4: web UI MVP
+- ✅ Этап 5: Video Gateway (HLS + profiles + WebRTC discovery)
+- ✅ Этап 6: data layer эксплуатация (retention/rotation/export)
+- ✅ Этап 7: удаление desktop UI и переход на web-only
+
+### Следующие этапы
+1. Довести dual-write до production-ready режима (health/retry/backpressure).
+2. Выполнить rolling migration SQLite -> PostgreSQL на боевых окружениях.
+3. Расширить эксплуатационные сценарии экспорта и архивации (batch/chunk).
