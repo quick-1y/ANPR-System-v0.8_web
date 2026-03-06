@@ -752,6 +752,14 @@ class SettingsManager:
             logging_config["logs_dir"] = storage.get("logs_dir", "logs")
             return logging_config
 
+    def save_logging_config(self, logging_config: Dict[str, Any]) -> None:
+        with self._file_lock:
+            current = self.settings.get("logging", {})
+            current.update(logging_config)
+            self.settings["logging"] = current
+            settings_snapshot = copy.deepcopy(self.settings)
+        self._save(settings_snapshot)
+
     def get_debug_settings(self) -> Dict[str, Any]:
         with self._file_lock:
             if self._fill_debug_defaults(self.settings, self._debug_defaults()):

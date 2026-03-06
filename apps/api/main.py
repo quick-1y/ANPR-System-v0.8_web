@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -31,6 +32,41 @@ class ChannelPayload(BaseModel):
     enabled: bool = True
     roi_enabled: bool = True
     region: Dict[str, Any] | None = None
+
+
+class ROIRegionPayload(BaseModel):
+    unit: str = Field(default="percent", pattern="^(px|percent)$")
+    points: List[Dict[str, float]] = Field(default_factory=list)
+
+
+class PlateSizePayload(BaseModel):
+    width: int = Field(ge=1, le=4000)
+    height: int = Field(ge=1, le=4000)
+
+
+class ChannelConfigPayload(BaseModel):
+    name: str
+    source: str
+    enabled: bool = True
+    controller_id: Optional[int] = None
+    controller_relay: int = Field(default=0, ge=0, le=1)
+    controller_action: str = Field(default="on", pattern="^(on|off|pulse)$")
+    list_filter_mode: str = Field(default="all", pattern="^(all|whitelist|custom)$")
+    list_filter_list_ids: List[int] = Field(default_factory=list)
+    detection_mode: str = Field(default="motion", pattern="^(always|motion)$")
+    motion_threshold: float = Field(default=0.01, ge=0.0, le=1.0)
+    motion_frame_stride: int = Field(default=1, ge=1, le=30)
+    motion_activation_frames: int = Field(default=3, ge=1, le=120)
+    motion_release_frames: int = Field(default=6, ge=1, le=120)
+    detector_frame_stride: int = Field(default=2, ge=1, le=30)
+    size_filter_enabled: bool = True
+    min_plate_size: PlateSizePayload = Field(default_factory=lambda: PlateSizePayload(width=80, height=20))
+    max_plate_size: PlateSizePayload = Field(default_factory=lambda: PlateSizePayload(width=600, height=240))
+    best_shots: int = Field(default=3, ge=1, le=20)
+    cooldown_seconds: int = Field(default=5, ge=0, le=300)
+    ocr_min_confidence: float = Field(default=0.6, ge=0.0, le=1.0)
+    roi_enabled: bool = True
+    region: ROIRegionPayload = Field(default_factory=ROIRegionPayload)
 
 
 class ChannelOCRPayload(BaseModel):
@@ -91,6 +127,71 @@ class ExportBundlePayload(BaseModel):
     include_media: bool = True
 
 
+class ReconnectSignalLossPayload(BaseModel):
+    enabled: bool = True
+    frame_timeout_seconds: int = Field(default=5, ge=1, le=300)
+    retry_interval_seconds: int = Field(default=5, ge=1, le=300)
+
+
+class ReconnectPeriodicPayload(BaseModel):
+    enabled: bool = False
+    interval_minutes: int = Field(default=60, ge=1, le=1440)
+
+
+class ReconnectPayload(BaseModel):
+    signal_loss: ReconnectSignalLossPayload
+    periodic: ReconnectPeriodicPayload
+
+
+class StoragePayload(BaseModel):
+    db_dir: str
+    database_file: str
+    screenshots_dir: str
+    logs_dir: str
+    auto_cleanup_enabled: bool
+    cleanup_interval_minutes: int = Field(ge=1, le=1440)
+    events_retention_days: int = Field(ge=1, le=3650)
+    media_retention_days: int = Field(ge=1, le=3650)
+    max_screenshots_mb: int = Field(ge=128, le=1024 * 1024)
+    export_dir: str
+    dual_write_enabled: bool = False
+    postgres_dsn: str = ""
+
+
+class LoggingPayload(BaseModel):
+    level: str = Field(pattern="^(DEBUG|INFO|WARNING|ERROR|CRITICAL)$")
+    retention_days: int = Field(ge=1, le=3650)
+
+
+class TimePayload(BaseModel):
+    timezone: str
+    offset_minutes: int = Field(ge=-720, le=720)
+
+
+class PlatesPayload(BaseModel):
+    config_dir: str
+    enabled_countries: List[str] = Field(default_factory=list)
+
+
+class DebugPayload(BaseModel):
+    show_detection_boxes: bool = False
+    show_ocr_text: bool = False
+    show_direction_tracks: bool = False
+    show_channel_metrics: bool = True
+    log_panel_enabled: bool = False
+
+
+class GlobalSettingsPayload(BaseModel):
+    grid: str
+    theme: str
+    reconnect: ReconnectPayload
+    storage: StoragePayload
+    logging: LoggingPayload
+    time: TimePayload
+    plates: PlatesPayload
+    debug: DebugPayload
+
+
 settings = SettingsManager()
 
 
@@ -110,6 +211,7 @@ lists_db = ListDatabase(settings.get_db_path())
 controller_service = ControllerService()
 event_bus = EventBus()
 MAIN_LOOP: asyncio.AbstractEventLoop | None = None
+STREAM_SHUTDOWN = asyncio.Event()
 
 
 def _create_processor() -> ChannelProcessor:
@@ -153,6 +255,12 @@ def _restart_processor_for_settings() -> None:
         processor.start(channel_id)
 
 
+def _restart_channel_if_running(channel_id: int) -> None:
+    metric = processor.list_states().get(channel_id)
+    if metric and metric.state == "running":
+        processor.restart(channel_id)
+
+
 processor = _create_processor()
 lifecycle = _build_lifecycle()
 
@@ -170,6 +278,7 @@ app.mount("/web", StaticFiles(directory=str(WEB_DIR), html=True), name="web")
 async def bootstrap_channels() -> None:
     global MAIN_LOOP
     MAIN_LOOP = asyncio.get_running_loop()
+    STREAM_SHUTDOWN.clear()
     for channel in settings.get_channels():
         processor.ensure_channel(channel)
         if channel.get("enabled", True):
@@ -178,6 +287,7 @@ async def bootstrap_channels() -> None:
 
 @app.on_event("shutdown")
 def shutdown_channels() -> None:
+    STREAM_SHUTDOWN.set()
     for channel in settings.get_channels():
         processor.stop(int(channel["id"]))
 
@@ -206,6 +316,42 @@ def list_channels() -> List[Dict[str, Any]]:
         if channel_metrics:
             channel["metrics"] = channel_metrics.__dict__
     return channels
+
+
+@app.get("/api/channels/{channel_id}/snapshot.jpg")
+def channel_snapshot(channel_id: int) -> Response:
+    channels = {int(item["id"]): item for item in settings.get_channels()}
+    channel = channels.get(channel_id)
+    if not channel:
+        raise HTTPException(status_code=404, detail="Канал не найден")
+
+    cap = None
+    try:
+        import cv2
+
+        cap = cv2.VideoCapture(str(channel.get("source", "0")))
+        try:
+            cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 3000)
+            cap.set(cv2.CAP_PROP_READ_TIMEOUT_MSEC, 3000)
+        except Exception:
+            pass
+        ok, frame = cap.read()
+        if not ok or frame is None:
+            raise HTTPException(status_code=502, detail="Не удалось получить кадр из источника")
+        ok_enc, buf = cv2.imencode('.jpg', frame)
+        if not ok_enc:
+            raise HTTPException(status_code=500, detail="Не удалось закодировать кадр")
+        return Response(content=buf.tobytes(), media_type="image/jpeg")
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"Snapshot недоступен: {exc}") from exc
+    finally:
+        if cap is not None:
+            try:
+                cap.release()
+            except Exception:
+                pass
 
 
 @app.get("/api/channels/{channel_id}/health")
@@ -265,11 +411,36 @@ def update_channel(channel_id: int, payload: Dict[str, Any]) -> Dict[str, Any]:
     channels = settings.get_channels()
     for idx, channel in enumerate(channels):
         if int(channel["id"]) == channel_id:
+            was_enabled = bool(channels[idx].get("enabled", True))
             channels[idx].update(payload)
             settings.save_channels(channels)
             processor.ensure_channel(channels[idx])
+            if "enabled" in payload:
+                if bool(channels[idx].get("enabled", True)):
+                    processor.start(channel_id)
+                else:
+                    processor.stop(channel_id)
+            else:
+                _restart_channel_if_running(channel_id)
             return channels[idx]
     raise HTTPException(status_code=404, detail="Канал не найден")
+
+
+@app.get("/api/channels/{channel_id}/config")
+def get_channel_config(channel_id: int) -> Dict[str, Any]:
+    for channel in settings.get_channels():
+        if int(channel.get("id", 0)) == channel_id:
+            return channel
+    raise HTTPException(status_code=404, detail="Канал не найден")
+
+
+@app.put("/api/channels/{channel_id}/config")
+def put_channel_config(channel_id: int, payload: ChannelConfigPayload) -> Dict[str, Any]:
+    data = payload.model_dump()
+    data["min_plate_size"] = payload.min_plate_size.model_dump()
+    data["max_plate_size"] = payload.max_plate_size.model_dump()
+    data["region"] = payload.region.model_dump()
+    return update_channel(channel_id, data)
 
 
 @app.put("/api/channels/{channel_id}/ocr")
@@ -314,14 +485,56 @@ def list_events(limit: int = 100) -> List[Dict[str, Any]]:
     return [dict(row) for row in rows]
 
 
+def _fetch_event_by_id(event_id: int) -> Dict[str, Any] | None:
+    row = events_db.fetch_by_id(event_id)
+    if row is None:
+        return None
+    if isinstance(row, dict):
+        return row
+    return dict(row)
+
+
+@app.get("/api/events/item/{event_id}")
+def get_event(event_id: int) -> Dict[str, Any]:
+    event = _fetch_event_by_id(event_id)
+    if not event:
+        raise HTTPException(status_code=404, detail="Событие не найдено")
+    return event
+
+
+@app.get("/api/events/item/{event_id}/media/{kind}")
+def get_event_media(event_id: int, kind: str) -> FileResponse:
+    event = _fetch_event_by_id(event_id)
+    if not event:
+        raise HTTPException(status_code=404, detail="Событие не найдено")
+    if kind not in {"frame", "plate"}:
+        raise HTTPException(status_code=400, detail="kind должен быть frame или plate")
+    media_path = str(event.get("frame_path" if kind == "frame" else "plate_path") or "").strip()
+    if not media_path:
+        raise HTTPException(status_code=404, detail="Изображение для события отсутствует")
+    path_obj = Path(media_path)
+    if not path_obj.is_file():
+        raise HTTPException(status_code=404, detail="Файл изображения не найден")
+    return FileResponse(path=path_obj, media_type="image/jpeg")
+
+
 @app.get("/api/events/stream")
-async def stream_events() -> StreamingResponse:
+async def stream_events(request: Request) -> StreamingResponse:
     queue = await event_bus.subscribe()
 
     async def generator():
+        started_at = time.monotonic()
+        max_stream_seconds = 3.0
         try:
-            while True:
-                event = await queue.get()
+            while not STREAM_SHUTDOWN.is_set():
+                if await request.is_disconnected():
+                    break
+                if (time.monotonic() - started_at) >= max_stream_seconds:
+                    break
+                try:
+                    event = await asyncio.wait_for(queue.get(), timeout=1.0)
+                except asyncio.TimeoutError:
+                    continue
                 yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
         finally:
             await event_bus.unsubscribe(queue)
@@ -428,6 +641,38 @@ def update_dual_write(payload: DualWritePayload) -> Dict[str, Any]:
     events_db = _create_events_db()
     lifecycle = _build_lifecycle()
     return {"status": "updated", **payload.model_dump(), "postgres_primary": True}
+
+
+@app.get("/api/settings")
+def get_global_settings() -> Dict[str, Any]:
+    return {
+        "grid": settings.get_grid(),
+        "theme": settings.get_theme(),
+        "reconnect": settings.get_reconnect(),
+        "storage": settings.get_storage_settings(),
+        "logging": settings.get_logging_config(),
+        "time": settings.get_time_settings(),
+        "plates": settings.get_plate_settings(),
+        "debug": settings.get_debug_settings(),
+    }
+
+
+@app.put("/api/settings")
+def put_global_settings(payload: GlobalSettingsPayload) -> Dict[str, Any]:
+    settings.save_grid(payload.grid)
+    settings.save_theme(payload.theme)
+    settings.save_reconnect(payload.reconnect.model_dump())
+    settings.save_storage_settings(payload.storage.model_dump())
+    settings.save_time_settings(payload.time.model_dump())
+    settings.save_plate_settings(payload.plates.model_dump())
+    settings.save_debug_settings(payload.debug.model_dump())
+    settings.save_logging_config(payload.logging.model_dump())
+
+    global events_db, lifecycle
+    events_db = _create_events_db()
+    lifecycle = _build_lifecycle()
+    _restart_processor_for_settings()
+    return get_global_settings()
 
 
 @app.post("/api/data/retention/run")

@@ -126,6 +126,12 @@ class EventDatabase:
             )
             return cursor.fetchall()
 
+    def fetch_by_id(self, event_id: int) -> Optional[sqlite3.Row]:
+        with self._connect() as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.execute("SELECT * FROM events WHERE id = ?", (int(event_id),))
+            return cursor.fetchone()
+
     def fetch_filtered(
         self,
         start: Optional[str] = None,
@@ -291,6 +297,17 @@ class PostgresEventDatabase:
                     (limit,),
                 )
                 return [self._to_dict(row) for row in cursor.fetchall()]
+
+    def fetch_by_id(self, event_id: int) -> Optional[dict[str, Any]]:
+        with self._connect() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    "SELECT id, timestamp, channel, plate, country, confidence, source, frame_path, plate_path, direction "
+                    "FROM events WHERE id = %s",
+                    (int(event_id),),
+                )
+                row = cursor.fetchone()
+                return self._to_dict(row) if row else None
 
     def delete_before(self, cutoff_iso: str) -> List[dict[str, Any]]:
         with self._connect() as conn:
