@@ -1,4 +1,3 @@
-````md
 # ANPR System - Automatic Number Plate Recognition
 
 ![Python](https://img.shields.io/badge/Python-3.13-blue.svg)
@@ -53,24 +52,24 @@ API Service (FastAPI)
   └── Video Gateway
         ├── HLS preview
         └── Quality profiles / WebRTC adapter
-````
+```
 
 ## Технологический стек
 
-* **Backend:** FastAPI, Uvicorn
-* **Детекция:** YOLOv8
-* **OCR:** CRNN
-* **Видео:** OpenCV, HLS, WebRTC adapter path
-* **Хранение:** SQLite по умолчанию, PostgreSQL для migration path / dual-write
-* **ML stack:** PyTorch 2.8.0, torchvision 0.23.0, torchaudio 2.8.0, ultralytics 8.3.20
+- **Backend:** FastAPI, Uvicorn
+- **Детекция:** YOLOv8
+- **OCR:** CRNN
+- **Видео:** OpenCV, HLS, WebRTC adapter path
+- **Хранение:** SQLite по умолчанию, PostgreSQL для migration path / dual-write
+- **ML stack:** PyTorch 2.8.0, torchvision 0.23.0, torchaudio 2.8.0, ultralytics 8.3.20
 
 ## Установка
 
 ### Предварительные требования
 
-* Python 3.13
-* pip
-* ffmpeg
+- Python 3.13
+- pip
+- ffmpeg
 
 ### Установка зависимостей
 
@@ -87,28 +86,25 @@ pip install -r requirements.txt
 Откройте три отдельных терминала.
 
 **1. API + Web UI**
-
 ```bash
 python -m uvicorn apps.api.main:app --host 0.0.0.0 --port 8080
 ```
 
 **2. Video Gateway**
-
 ```bash
 python -m uvicorn apps.video_gateway.main:app --host 0.0.0.0 --port 8091
 ```
 
 **3. Worker**
-
 ```bash
 python -m uvicorn apps.worker.main:app --host 0.0.0.0 --port 8092
 ```
 
 ### Точки доступа
 
-* **Web UI / API:** `http://localhost:8080`
-* **Video Gateway health:** `http://localhost:8091/video/health`
-* **Worker health:** `http://localhost:8092/worker/health`
+- **Web UI / API:** `http://localhost:8080`
+- **Video Gateway health:** `http://localhost:8091/video/health`
+- **Worker health:** `http://localhost:8092/worker/health`
 
 ## Docker Compose
 
@@ -119,19 +115,19 @@ docker compose up --build
 
 Compose поднимает:
 
-* `api`
-* `video_gateway`
-* `retention_worker`
-* `mediamtx`
-* `postgres`
+- `api`
+- `video_gateway`
+- `retention_worker`
+- `mediamtx`
+- `postgres`
 
 ## Хранение данных
 
-* **По умолчанию:** SQLite
-* **События:** база событий распознавания, метаданные, пути к кадрам и кропам номеров
-* **Медиа:** скриншоты и кропы сохраняются на диск
-* **Экспорт:** CSV / ZIP через data lifecycle API
-* **PostgreSQL:** поддерживается как путь миграции и dual-write, но не является обязательным storage по умолчанию
+- **По умолчанию:** SQLite
+- **События:** база событий распознавания, метаданные, пути к кадрам и кропам номеров
+- **Медиа:** скриншоты и кропы сохраняются на диск
+- **Экспорт:** CSV / ZIP через data lifecycle API
+- **PostgreSQL:** поддерживается как путь миграции и dual-write, но не является обязательным storage по умолчанию
 
 ## Структура проекта
 
@@ -173,19 +169,3 @@ ANPR-System-v0.8_web/
 ## License
 
 MIT
-
-```
-
-Я бы ещё убрал из текущего README вот это:
-- разделы вида `Что уже реализовано`
-- поэтапный журнал миграции
-- длинный список API endpoint’ов
-- quick-start по WebRTC
-- большой troubleshooting
-- дублирующиеся блоки структуры проекта
-
-Если хочешь, я могу сразу дать и **ещё более строгую, короткую версию README**, буквально на 60–80 строк, совсем в стиле clean product README.
-::contentReference[oaicite:1]{index=1}
-```
-
-[1]: https://github.com/quick-1y/ANPR-System-v0.8_web "GitHub - quick-1y/ANPR-System-v0.8_web · GitHub"
