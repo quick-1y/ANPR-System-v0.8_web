@@ -44,7 +44,7 @@
     "max_screenshots_mb": 4096,
     "export_dir": "data/exports",
     "dual_write_enabled": false,
-    "postgres_dsn": ""
+    "postgres_dsn": "postgresql://anpr:anpr@127.0.0.1:5432/anpr"
   },
   "tracking": {
     "best_shots": 10,

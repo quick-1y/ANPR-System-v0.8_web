@@ -35,11 +35,13 @@ class RetentionScheduler:
 
 
 settings = SettingsManager()
-policy = RetentionPolicy.from_storage(settings.get_storage_settings())
+storage = settings.get_storage_settings()
+policy = RetentionPolicy.from_storage(storage)
 lifecycle = DataLifecycleService(
     db_path=settings.get_db_path(),
     screenshots_dir=settings.get_screenshot_dir(),
     policy=policy,
+    postgres_dsn=str(storage.get("postgres_dsn", "")).strip(),
 )
 scheduler = RetentionScheduler(lifecycle)
 

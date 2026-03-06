@@ -73,7 +73,7 @@ def storage_defaults() -> Dict[str, Any]:
         "max_screenshots_mb": 4096,
         "export_dir": "data/exports",
         "dual_write_enabled": False,
-        "postgres_dsn": "",
+        "postgres_dsn": os.getenv("POSTGRES_DSN", "postgresql://anpr:anpr@127.0.0.1:5432/anpr"),
     }
 
 

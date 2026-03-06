@@ -1,20 +1,24 @@
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Optional
 
 from anpr.infrastructure.logging_manager import get_logger
-from anpr.infrastructure.storage import EventDatabase
+from anpr.infrastructure.storage import EventDatabase, PostgresEventDatabase
 
 logger = get_logger(__name__)
 
 
 class DualEventSink:
-    """Пишет события в SQLite и опционально в PostgreSQL (dual-write подготовка)."""
+    """PostgreSQL-first sink with optional SQLite compatibility write."""
 
     def __init__(self, sqlite_db_path: str, dual_write_enabled: bool = False, postgres_dsn: str = "") -> None:
         self._sqlite = EventDatabase(sqlite_db_path)
-        self._dual_write_enabled = bool(dual_write_enabled)
+        self._sqlite_compat_write_enabled = bool(dual_write_enabled)
         self._postgres_dsn = str(postgres_dsn or "").strip()
+        self._postgres = PostgresEventDatabase(self._postgres_dsn) if self._postgres_dsn else None
+
+        if not self._postgres:
+            logger.warning("postgres_dsn не задан: используется SQLite compatibility mode (не рекомендуется для production)")
 
     def insert_event(
         self,
@@ -27,18 +31,8 @@ class DualEventSink:
         timestamp: str,
         direction: Optional[str],
     ) -> int:
-        sqlite_id = self._sqlite.insert_event(
-            channel=channel,
-            plate=plate,
-            country=country,
-            confidence=confidence,
-            source=source,
-            timestamp=timestamp,
-            direction=direction,
-        )
-
-        if self._dual_write_enabled and self._postgres_dsn:
-            self._write_postgres(
+        if self._postgres:
+            event_id = self._postgres.insert_event(
                 channel=channel,
                 plate=plate,
                 country=country,
@@ -47,34 +41,27 @@ class DualEventSink:
                 timestamp=timestamp,
                 direction=direction,
             )
+            if self._sqlite_compat_write_enabled:
+                try:
+                    self._sqlite.insert_event(
+                        channel=channel,
+                        plate=plate,
+                        country=country,
+                        confidence=confidence,
+                        source=source,
+                        timestamp=timestamp,
+                        direction=direction,
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("SQLite compatibility write error: %s", exc)
+            return int(event_id)
 
-        return sqlite_id
-
-    def _write_postgres(
-        self,
-        *,
-        channel: str,
-        plate: str,
-        country: Optional[str],
-        confidence: float,
-        source: str,
-        timestamp: str,
-        direction: Optional[str],
-    ) -> None:
-        try:
-            import psycopg  # type: ignore
-        except Exception:
-            logger.warning("Dual-write включён, но psycopg недоступен. Запись в PostgreSQL пропущена.")
-            return
-
-        query = (
-            "INSERT INTO events (timestamp, channel, plate, country, confidence, source, direction) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s)"
+        return self._sqlite.insert_event(
+            channel=channel,
+            plate=plate,
+            country=country,
+            confidence=confidence,
+            source=source,
+            timestamp=timestamp,
+            direction=direction,
         )
-        try:
-            with psycopg.connect(self._postgres_dsn) as conn:
-                with conn.cursor() as cursor:
-                    cursor.execute(query, (timestamp, channel, plate, country, confidence, source, direction))
-                conn.commit()
-        except Exception as exc:
-            logger.warning("Ошибка dual-write в PostgreSQL: %s", exc)

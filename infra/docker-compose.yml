@@ -5,6 +5,8 @@ services:
     working_dir: /app
     volumes:
       - ../:/app
+    environment:
+      POSTGRES_DSN: "postgresql://anpr:anpr@postgres:5432/anpr"
     command: bash -lc "pip install -r requirements.txt && uvicorn apps.api.main:app --host 0.0.0.0 --port 8080"
     ports:
       - "8080:8080"
@@ -31,6 +33,8 @@ services:
     working_dir: /app
     volumes:
       - ../:/app
+    environment:
+      POSTGRES_DSN: "postgresql://anpr:anpr@postgres:5432/anpr"
     command: bash -lc "pip install -r requirements.txt && uvicorn apps.worker.main:app --host 0.0.0.0 --port 8092"
     ports:
       - "8092:8092"

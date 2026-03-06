@@ -635,7 +635,12 @@ class SettingsManager:
             if self._fill_storage_defaults(self.settings, self._storage_defaults()):
                 settings_snapshot = copy.deepcopy(self.settings)
                 self._save(settings_snapshot)
-            return copy.deepcopy(self.settings.get("storage", {}))
+            storage = copy.deepcopy(self.settings.get("storage", {}))
+
+        env_postgres_dsn = os.getenv("POSTGRES_DSN", "").strip()
+        if env_postgres_dsn:
+            storage["postgres_dsn"] = env_postgres_dsn
+        return storage
 
     def save_storage_settings(self, storage_settings: Dict[str, Any]) -> None:
         with self._file_lock:

@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field
 from anpr.infrastructure.controller_service import ControllerService
 from anpr.infrastructure.list_database import ListDatabase
 from anpr.infrastructure.settings_manager import SettingsManager
-from anpr.infrastructure.storage import EventDatabase
+from anpr.infrastructure.storage import EventDatabase, PostgresEventDatabase
 from apps.api.data_lifecycle import DataLifecycleService, RetentionPolicy
 from packages.anpr_core.channel_runtime import ChannelProcessor
 from packages.anpr_core.event_bus import EventBus
@@ -90,7 +90,17 @@ class ExportBundlePayload(BaseModel):
 
 
 settings = SettingsManager()
-events_db = EventDatabase(settings.get_db_path())
+
+
+def _create_events_db() -> EventDatabase | PostgresEventDatabase:
+    storage = settings.get_storage_settings()
+    postgres_dsn = str(storage.get("postgres_dsn", "")).strip()
+    if postgres_dsn:
+        return PostgresEventDatabase(postgres_dsn)
+    return EventDatabase(settings.get_db_path())
+
+
+events_db = _create_events_db()
 lists_db = ListDatabase(settings.get_db_path())
 controller_service = ControllerService()
 event_bus = EventBus()
@@ -107,11 +117,13 @@ def _create_processor() -> ChannelProcessor:
 
 
 def _build_lifecycle() -> DataLifecycleService:
-    policy = RetentionPolicy.from_storage(settings.get_storage_settings())
+    storage = settings.get_storage_settings()
+    policy = RetentionPolicy.from_storage(storage)
     return DataLifecycleService(
         db_path=settings.get_db_path(),
         screenshots_dir=settings.get_screenshot_dir(),
         policy=policy,
+        postgres_dsn=str(storage.get("postgres_dsn", "")).strip(),
     )
 
 
@@ -293,7 +305,8 @@ def restart_channel(channel_id: int) -> Dict[str, str]:
 
 @app.get("/api/events")
 def list_events(limit: int = 100) -> List[Dict[str, Any]]:
-    return [dict(row) for row in events_db.fetch_recent(limit=limit)]
+    rows = events_db.fetch_recent(limit=limit)
+    return [dict(row) for row in rows]
 
 
 @app.get("/api/events/stream")
@@ -396,16 +409,20 @@ def get_dual_write() -> Dict[str, Any]:
     return {
         "dual_write_enabled": bool(storage.get("dual_write_enabled", False)),
         "postgres_dsn": str(storage.get("postgres_dsn", "")),
+        "postgres_primary": bool(str(storage.get("postgres_dsn", "")).strip()),
     }
 
 
 @app.put("/api/storage/dual-write")
 def update_dual_write(payload: DualWritePayload) -> Dict[str, Any]:
-    if payload.dual_write_enabled and not payload.postgres_dsn.strip():
-        raise HTTPException(status_code=422, detail="postgres_dsn обязателен при dual_write_enabled=true")
+    if not payload.postgres_dsn.strip():
+        raise HTTPException(status_code=422, detail="postgres_dsn обязателен: PostgreSQL является primary backend")
     settings.save_storage_settings(payload.model_dump())
     _restart_processor_for_settings()
-    return {"status": "updated", **payload.model_dump()}
+    global events_db, lifecycle
+    events_db = _create_events_db()
+    lifecycle = _build_lifecycle()
+    return {"status": "updated", **payload.model_dump(), "postgres_primary": True}
 
 
 @app.post("/api/data/retention/run")

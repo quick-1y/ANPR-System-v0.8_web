@@ -2,13 +2,16 @@ from __future__ import annotations
 
 import csv
 import os
+import shutil
 import sqlite3
 import time
-import zipfile
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional
+from zipfile import ZIP_DEFLATED, ZipFile
+
+from anpr.infrastructure.storage import PostgresEventDatabase
 
 
 @dataclass
@@ -43,12 +46,12 @@ class RetentionPolicy:
 
 
 class DataLifecycleService:
-    """Эксплуатационный data layer: retention, rotation и export."""
-
-    def __init__(self, db_path: str, screenshots_dir: str, policy: RetentionPolicy) -> None:
+    def __init__(self, db_path: str, screenshots_dir: str, policy: RetentionPolicy, postgres_dsn: str = "") -> None:
         self.db_path = db_path
         self.screenshots_dir = Path(screenshots_dir)
         self.policy = policy
+        self.postgres_dsn = str(postgres_dsn or "").strip()
+        self.pg_events = PostgresEventDatabase(self.postgres_dsn) if self.postgres_dsn else None
         self.screenshots_dir.mkdir(parents=True, exist_ok=True)
         Path(self.policy.export_dir).mkdir(parents=True, exist_ok=True)
 
@@ -62,96 +65,111 @@ class DataLifecycleService:
         return conn
 
     @staticmethod
-    def _safe_delete(path: Optional[str]) -> bool:
+    def _safe_unlink(path: Optional[str]) -> bool:
         if not path:
             return False
         try:
-            candidate = Path(path)
-            if candidate.exists() and candidate.is_file():
-                candidate.unlink()
-                return True
-        except Exception:
+            os.remove(path)
+            return True
+        except FileNotFoundError:
             return False
-        return False
+        except OSError:
+            return False
 
     def cleanup_old_events(self) -> Dict[str, int]:
         cutoff = datetime.now(timezone.utc) - timedelta(days=self.policy.events_retention_days)
         cutoff_iso = cutoff.isoformat()
-        deleted_files = 0
 
+        deleted_files = 0
+        if self.pg_events:
+            rows = self.pg_events.delete_before(cutoff_iso)
+            for row in rows:
+                deleted_files += int(self._safe_unlink(row.get("frame_path")))
+                deleted_files += int(self._safe_unlink(row.get("plate_path")))
+            return {"deleted_events": len(rows), "deleted_media_files": deleted_files}
+
+        cutoff_sqlite = cutoff.strftime("%Y-%m-%d %H:%M:%S")
         with self._connect() as conn:
             rows = conn.execute(
                 "SELECT id, frame_path, plate_path FROM events WHERE datetime(timestamp) < datetime(?)",
-                (cutoff_iso,),
+                (cutoff_sqlite,),
             ).fetchall()
-            ids = [int(row["id"]) for row in rows]
+            ids = [row["id"] for row in rows]
             for row in rows:
-                deleted_files += int(self._safe_delete(row["frame_path"]))
-                deleted_files += int(self._safe_delete(row["plate_path"]))
-
+                deleted_files += int(self._safe_unlink(row["frame_path"]))
+                deleted_files += int(self._safe_unlink(row["plate_path"]))
             if ids:
                 placeholders = ",".join("?" for _ in ids)
                 conn.execute(f"DELETE FROM events WHERE id IN ({placeholders})", ids)
                 conn.commit()
-
         return {"deleted_events": len(ids), "deleted_media_files": deleted_files}
 
     def cleanup_old_media(self) -> Dict[str, int]:
         cutoff = time.time() - self.policy.media_retention_days * 86400
-        removed = 0
-        for ext in ("*.jpg", "*.jpeg", "*.png"):
+        deleted = 0
+        for ext in ("*.jpg", "*.jpeg", "*.png", "*.webp"):
             for file_path in self.screenshots_dir.rglob(ext):
                 try:
                     if file_path.stat().st_mtime < cutoff:
                         file_path.unlink()
-                        removed += 1
-                except FileNotFoundError:
+                        deleted += 1
+                except OSError:
                     continue
-        return {"removed_old_media_files": removed}
+        return {"deleted_orphan_media": deleted}
 
-    def rotate_media_by_size(self) -> Dict[str, int]:
+    def enforce_storage_limit(self) -> Dict[str, int]:
         max_bytes = self.policy.max_screenshots_mb * 1024 * 1024
-        files = []
+        files: list[tuple[float, Path, int]] = []
         total = 0
-        for ext in ("*.jpg", "*.jpeg", "*.png"):
+        for ext in ("*.jpg", "*.jpeg", "*.png", "*.webp"):
             for file_path in self.screenshots_dir.rglob(ext):
                 try:
                     stat = file_path.stat()
-                except FileNotFoundError:
+                except OSError:
                     continue
                 total += stat.st_size
-                files.append((file_path, stat.st_mtime, stat.st_size))
+                files.append((stat.st_mtime, file_path, stat.st_size))
 
         if total <= max_bytes:
-            return {"rotated_media_files": 0}
+            return {"deleted_for_limit": 0}
 
-        files.sort(key=lambda item: item[1])
-        removed = 0
-        for file_path, _, size in files:
+        files.sort(key=lambda item: item[0])
+        deleted = 0
+        for _, path, size in files:
             if total <= max_bytes:
                 break
             try:
-                file_path.unlink()
+                path.unlink()
                 total -= size
-                removed += 1
-            except FileNotFoundError:
+                deleted += 1
+            except OSError:
                 continue
-        return {"rotated_media_files": removed}
+        return {"deleted_for_limit": deleted}
 
     def run_retention_cycle(self) -> Dict[str, int]:
         result = {}
         result.update(self.cleanup_old_events())
         result.update(self.cleanup_old_media())
-        result.update(self.rotate_media_by_size())
+        result.update(self.enforce_storage_limit())
         return result
 
     def export_events_csv(self, *, start: Optional[str] = None, end: Optional[str] = None, channel: Optional[str] = None) -> str:
-        ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
         export_path = Path(self.policy.export_dir) / f"events_{ts}.csv"
+
+        if self.pg_events:
+            rows = self.pg_events.fetch_for_export(start=start, end=end, channel=channel)
+            fieldnames = ["id", "timestamp", "channel", "plate", "country", "confidence", "source", "frame_path", "plate_path", "direction"]
+            with export_path.open("w", newline="", encoding="utf-8") as file_obj:
+                writer = csv.DictWriter(file_obj, fieldnames=fieldnames)
+                writer.writeheader()
+                for row in rows:
+                    writer.writerow(row)
+            return str(export_path)
 
         query = "SELECT * FROM events"
         filters = []
-        params: list[Any] = []
+        params: list[str] = []
         if start:
             filters.append("datetime(timestamp) >= datetime(?)")
             params.append(start)
@@ -165,34 +183,73 @@ class DataLifecycleService:
             query += " WHERE " + " AND ".join(filters)
         query += " ORDER BY datetime(timestamp) DESC"
 
-        with self._connect() as conn, export_path.open("w", encoding="utf-8", newline="") as file:
+        with self._connect() as conn, export_path.open("w", newline="", encoding="utf-8") as file_obj:
             rows = conn.execute(query, params).fetchall()
-            writer = csv.writer(file, delimiter=";")
-            writer.writerow(["id", "timestamp", "channel", "plate", "country", "confidence", "source", "frame_path", "plate_path", "direction"])
+            if not rows:
+                file_obj.write("id,timestamp,channel,plate,country,confidence,source,frame_path,plate_path,direction\n")
+                return str(export_path)
+            writer = csv.DictWriter(file_obj, fieldnames=rows[0].keys())
+            writer.writeheader()
             for row in rows:
-                writer.writerow([row["id"], row["timestamp"], row["channel"], row["plate"], row["country"], row["confidence"], row["source"], row["frame_path"], row["plate_path"], row["direction"]])
-
+                writer.writerow(dict(row))
         return str(export_path)
 
     def export_events_bundle(self, *, start: Optional[str] = None, end: Optional[str] = None, channel: Optional[str] = None, include_media: bool = True) -> str:
         csv_path = Path(self.export_events_csv(start=start, end=end, channel=channel))
         bundle_path = csv_path.with_suffix(".zip")
 
-        with self._connect() as conn, zipfile.ZipFile(bundle_path, "w", zipfile.ZIP_DEFLATED) as archive:
+        media_paths: set[Path] = set()
+        if include_media:
+            if self.pg_events:
+                for row in self.pg_events.fetch_for_export(start=start, end=end, channel=channel):
+                    for key in ("frame_path", "plate_path"):
+                        raw = row.get(key)
+                        if raw:
+                            media_paths.add(Path(str(raw)))
+            else:
+                with self._connect() as conn:
+                    rows = conn.execute("SELECT frame_path, plate_path FROM events").fetchall()
+                    for row in rows:
+                        for key in ("frame_path", "plate_path"):
+                            raw = row[key]
+                            if raw:
+                                media_paths.add(Path(str(raw)))
+
+        with ZipFile(bundle_path, "w", compression=ZIP_DEFLATED) as archive:
             archive.write(csv_path, arcname=csv_path.name)
             if include_media:
-                rows = conn.execute("SELECT frame_path, plate_path FROM events").fetchall()
-                added: set[str] = set()
-                for row in rows:
-                    for media_path in (row["frame_path"], row["plate_path"]):
-                        if not media_path or media_path in added:
-                            continue
-                        path = Path(media_path)
-                        if path.exists() and path.is_file():
-                            try:
-                                archive.write(path, arcname=f"media/{path.name}")
-                                added.add(media_path)
-                            except FileNotFoundError:
-                                continue
-
+                for media_path in sorted(media_paths):
+                    if not media_path.exists() or not media_path.is_file():
+                        continue
+                    try:
+                        archive.write(media_path, arcname=f"media/{media_path.name}")
+                    except OSError:
+                        continue
+        try:
+            csv_path.unlink()
+        except OSError:
+            pass
         return str(bundle_path)
+
+    @staticmethod
+    def rotate_export_dir(export_dir: str, max_files: int = 200) -> Dict[str, int]:
+        base = Path(export_dir)
+        if not base.exists():
+            return {"deleted_exports": 0}
+        files = [item for item in base.iterdir() if item.is_file()]
+        if len(files) <= max_files:
+            return {"deleted_exports": 0}
+
+        files.sort(key=lambda item: item.stat().st_mtime)
+        to_delete = files[: len(files) - max_files]
+        deleted = 0
+        for file_path in to_delete:
+            try:
+                file_path.unlink()
+                deleted += 1
+            except OSError:
+                continue
+        return {"deleted_exports": deleted}
+
+
+__all__ = ["RetentionPolicy", "DataLifecycleService"]
