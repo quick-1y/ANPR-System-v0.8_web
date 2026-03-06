@@ -97,17 +97,17 @@ pip install torch==2.8.0 torchvision==0.23.0 torchaudio==2.8.0 --index-url https
 
 **1. API + Web UI**
 ```bash
-python -m uvicorn apps.api.main:app --host 0.0.0.0 --port 8080
+python -m uvicorn apps.api.main:app --host 127.0.0.1 --port 8080
 ```
 
 **2. Video Gateway**
 ```bash
-python -m uvicorn apps.video_gateway.main:app --host 0.0.0.0 --port 8091
+python -m uvicorn apps.video_gateway.main:app --host 127.0.0.1--port 8091
 ```
 
 **3. Worker**
 ```bash
-python -m uvicorn apps.worker.main:app --host 0.0.0.0 --port 8092
+python -m uvicorn apps.worker.main:app --host 127.0.0.1 --port 8092
 ```
 
 ### Точки доступа
