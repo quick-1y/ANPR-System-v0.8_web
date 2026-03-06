@@ -1,297 +1,178 @@
-# ANPR-System-v0.8 (Web-first)
+# ANPR System - Automatic Number Plate Recognition
 
 ![Python](https://img.shields.io/badge/Python-3.13-blue.svg)
 ![FastAPI](https://img.shields.io/badge/API-FastAPI-009688.svg)
 ![Web UI](https://img.shields.io/badge/UI-Web--only-4CAF50.svg)
 ![YOLOv8](https://img.shields.io/badge/Detection-YOLOv8-red.svg)
 ![CRNN](https://img.shields.io/badge/OCR-CRNN-orange.svg)
-![PostgreSQL-first](https://img.shields.io/badge/Data-PostgreSQL--first-blueviolet.svg)
+![SQLite/PostgreSQL](https://img.shields.io/badge/Data-SQLite%20%2B%20PostgreSQL-lightgrey.svg)
 
-Web-first сервис для автоматического распознавания номерных знаков.
-Инференс, OCR, декодинг и обработка видео выполняются **на сервере**.
+Web-first система автоматического распознавания автомобильных номеров с server-side обработкой многоканального видео, backend API и операторской web-панелью.
 
----
+## Основные возможности
 
-## Что уже реализовано
+- **Многоканальная обработка** — независимый runtime для каждого канала
+- **Server-side ANPR pipeline** — детекция, OCR, постобработка и сохранение событий выполняются на сервере
+- **Web-интерфейс оператора** — просмотр каналов, статусов, событий, ROI и списков
+- **Live-события** — поток обновлений через SSE
+- **Video Gateway** — HLS preview, профили качества `low / medium / high`
+- **Управление каналами** — запуск, остановка, перезапуск и изменение параметров через API
+- **ROI и фильтрация** — настройка зоны распознавания и рабочих параметров канала
+- **Списки номеров** — белые/черные списки и логика принятия решений
+- **Data lifecycle** — retention, очистка, экспорт CSV/ZIP
+- **Подготовка к PostgreSQL** — dual-write и миграция из SQLite
 
-- ✅ API сервис `apps/api/main.py` (каналы, lifecycle, ROI, списки, контроллеры, telemetry, data layer).
-- ✅ SSE live events: `GET /api/events/stream`.
-- ✅ Операторская web-панель `apps/web/index.html` с live-tiles и event details.
-- ✅ Runtime независимых каналов `packages/anpr_core/channel_runtime.py`.
-- ✅ Video Gateway `apps/video_gateway/main.py`:
-  - HLS live preview;
-  - профили качества `low/medium/high`;
-  - WebRTC adapter path через WHEP offer proxy к внешнему медиасерверу.
-- ✅ Data lifecycle:
-  - retention / rotation / export;
-  - отдельный retention worker `apps/worker/main.py`.
-- ✅ PostgreSQL-first хранение событий:
-  - запись событий по умолчанию в PostgreSQL (primary source of truth);
-  - опциональный SQLite compatibility write (`dual_write_enabled=true`);
-  - схема `infra/postgres/schema.sql` и one-shot sync `scripts/sync_sqlite_to_postgres.py`.
+## Архитектура
 
----
+Проект разделён на несколько сервисов:
 
-## Быстрый запуск
+- **API service** — основной backend и web UI
+- **Video Gateway** — live preview и управление видеопотоками
+- **Worker** — фоновые задачи хранения и retention
+- **ANPR Core** — распознавание, OCR, трекинг и обработка событий
 
-### 1) Локально (PostgreSQL-first, три сервиса)
+Схема на уровне компонентов:
 
-Перед запуском примените схему PostgreSQL:
-```bash
-psql "postgresql://anpr:anpr@127.0.0.1:5432/anpr" -f infra/postgres/schema.sql
+```text
+Web UI
+  │
+  ▼
+API Service (FastAPI)
+  │
+  ├── Channel lifecycle / ROI / lists / events
+  ├── SSE stream
+  ├── Data lifecycle
+  │
+  ├── ANPR Core
+  │     ├── Detection
+  │     ├── OCR
+  │     ├── Postprocessing
+  │     └── Channel runtime
+  │
+  └── Video Gateway
+        ├── HLS preview
+        └── Quality profiles / WebRTC adapter
 ```
 
-Если PostgreSQL не запущен локально, оставьте `settings.json -> storage.postgres_dsn` пустым (`""`) — API/worker стартуют в SQLite compatibility mode.
+## Технологический стек
+
+- **Backend:** FastAPI, Uvicorn
+- **Детекция:** YOLOv8
+- **OCR:** CRNN
+- **Видео:** OpenCV, HLS, WebRTC adapter path
+- **Хранение:** SQLite по умолчанию, PostgreSQL для migration path / dual-write
+- **ML stack:** PyTorch 2.8.0, torchvision 0.23.0, torchaudio 2.8.0, ultralytics 8.3.20
+
+## Установка
+
+### Предварительные требования
+
+- Python 3.13
+- pip
+- ffmpeg
+
+### Установка зависимостей
 
 ```bash
+git clone https://github.com/quick-1y/ANPR-System-v0.8_web.git
+cd ANPR-System-v0.8_web
+```
+```bash
+# Для CPU:
+pip install -r requirements.txt --index-url https://download.pytorch.org/whl/cpu --extra-index-url https://pypi.org/simple
+```
+```bash
+# Для CUDA 2.8.0:
+pip install torch==2.8.0 torchvision==0.23.0 torchaudio==2.8.0 --index-url https://download.pytorch.org/whl/cu128
+```
+
+## Быстрый старт
+
+### Локальный запуск
+
+Откройте три отдельных терминала.
+
+**1. API + Web UI**
+```bash
 python -m uvicorn apps.api.main:app --host 0.0.0.0 --port 8080
+```
+
+**2. Video Gateway**
+```bash
 python -m uvicorn apps.video_gateway.main:app --host 0.0.0.0 --port 8091
+```
+
+**3. Worker**
+```bash
 python -m uvicorn apps.worker.main:app --host 0.0.0.0 --port 8092
 ```
 
-- Web UI / API: `http://localhost:8080`
-- Video Gateway health: `http://localhost:8091/video/health`
-- Worker health: `http://localhost:8092/worker/health`
+### Точки доступа
 
+- **Web UI / API:** `http://localhost:8080`
+- **Video Gateway health:** `http://localhost:8091/video/health`
+- **Worker health:** `http://localhost:8092/worker/health`
 
-
-> Важно для Windows/PowerShell: если `postgres_dsn` задан, но PostgreSQL недоступен, сервисы теперь автоматически переходят в SQLite compatibility mode и продолжают запуск.
-
-### 2) Docker Compose
+## Docker Compose
 
 ```bash
 cd infra
 docker compose up --build
 ```
 
----
+Compose поднимает:
 
-## Архитектура (текущая)
+- `api`
+- `video_gateway`
+- `retention_worker`
+- `mediamtx`
+- `postgres`
+
+## Хранение данных
+
+- **По умолчанию:** SQLite
+- **События:** база событий распознавания, метаданные, пути к кадрам и кропам номеров
+- **Медиа:** скриншоты и кропы сохраняются на диск
+- **Экспорт:** CSV / ZIP через data lifecycle API
+- **PostgreSQL:** поддерживается как путь миграции и dual-write, но не является обязательным storage по умолчанию
+
+## Структура проекта
 
 ```text
-ANPR-System-v0.8/
-├── AGENTS.md
-├── README.md
-├── requirements.txt
-├── settings.json
-│
+ANPR-System-v0.8_web/
 ├── apps/
-│   ├── api/
-│   │   ├── main.py
-│   │   └── data_lifecycle.py
-│   ├── video_gateway/
-│   │   └── main.py
-│   ├── web/
-│   │   └── index.html
-│   └── worker/
-│       ├── main.py
-│       └── README.md
-│
+│   ├── api/              # backend API и web entrypoint
+│   ├── video_gateway/    # HLS / video service
+│   ├── worker/           # retention и фоновые задачи
+│   └── web/              # операторский web UI
 ├── packages/
-│   └── anpr_core/
-│       ├── channel_runtime.py
-│       ├── event_bus.py
-│       └── event_sink.py
-│
-├── anpr/
-│   ├── detection/
-│   ├── pipeline/
-│   ├── recognition/
-│   ├── preprocessing/
-│   ├── postprocessing/
-│   └── infrastructure/
-│
+│   └── anpr_core/        # channel runtime, event bus, sinks
+├── anpr/                 # detection, OCR, preprocessing, postprocessing, infrastructure
 ├── infra/
 │   ├── docker-compose.yml
 │   ├── postgres/
-│   │   └── schema.sql
 │   ├── nginx/
 │   └── k8s/
-│
-└── scripts/
-    └── sync_sqlite_to_postgres.py
+├── scripts/
+│   └── sync_sqlite_to_postgres.py
+├── config/
+├── models/
+├── requirements.txt
+└── settings.json
 ```
 
----
+## PostgreSQL migration
 
-## API (основное)
+Если нужен переход на PostgreSQL:
 
-### Каналы
-- `GET /api/channels`
-- `POST /api/channels`
-- `PUT /api/channels/{id}`
-- `DELETE /api/channels/{id}`
-- `POST /api/channels/{id}/start|stop|restart`
-- `PUT /api/channels/{id}/ocr` (валидируемый контракт OCR)
-- `PUT /api/channels/{id}/filter` (валидируемый контракт фильтрации)
-- `GET /api/channels/{id}/health`
-- `GET /api/telemetry/channels`
+1. Примените схему из `infra/postgres/schema.sql`
+2. Синхронизируйте исторические данные через `scripts/sync_sqlite_to_postgres.py`
+3. Включите dual-write в настройках storage
 
-### События
-- `GET /api/events`
-- `GET /api/events/stream` (SSE)
+## Статус проекта
 
-### Контроллеры
-- `GET /api/controllers`
-- `POST /api/controllers`
-- `PUT /api/controllers/{id}`
-- `DELETE /api/controllers/{id}`
-- `POST /api/controllers/{id}/test`
+Текущая версия — **web-only ANPR system**. Desktop UI удалён, основной интерфейс работы теперь веб-панель.
 
-### Data lifecycle
-- `GET /api/data/policy`
-- `PUT /api/data/policy`
-- `POST /api/data/retention/run`
-- `GET /api/data/export/events.csv`
-- `POST /api/data/export/bundle`
+## License
 
-### Storage / PostgreSQL-first
-- `GET /api/storage/dual-write`
-- `PUT /api/storage/dual-write`
-
-### Video Gateway
-- `GET /video/health`
-- `GET /video/channels`
-- `POST /video/channels/{id}/start|stop`
-- `POST /video/channels/{id}/profile`
-- `GET /video/webrtc/config`
-- `PUT /video/webrtc/config`
-- `POST /video/webrtc/{id}/offer` (WHEP adapter path, body: SDP `application/sdp`)
-- `GET /video/webrtc/{id}`
-
----
-
-### Web UI live QoS
-- Ручное переключение профиля сохраняется: кнопки `low/medium/high` в карточке канала.
-- Автоматический QoS включается чекбоксом `Auto QoS` в верхней панели.
-- Эвристика первой версии:
-  - плитка не видна в viewport -> `low`;
-  - плитка видима (>=60%) -> `medium`;
-  - активная плитка (hover курсором) -> `high`.
-- После ручного переключения авто-режим не переопределяет профиль 120 секунд (операторский lock).
-- HLS остаётся основным fallback-путём просмотра, WebRTC — отдельный adapter path.
-
----
-
-## Конфигурация хранения
-
-`settings.json -> storage`:
-
-- `db_dir`, `database_file`
-- `screenshots_dir`
-- `logs_dir`
-- `auto_cleanup_enabled`
-- `cleanup_interval_minutes`
-- `events_retention_days`
-- `media_retention_days`
-- `max_screenshots_mb`
-- `export_dir`
-- `dual_write_enabled`
-- `postgres_dsn`
-
----
-
-## PostgreSQL-first запуск и migration path
-
-1. Применить схему:
-```bash
-psql "$POSTGRES_DSN" -f infra/postgres/schema.sql
-```
-
-2. Синхронизировать исторические данные из SQLite:
-```bash
-python scripts/sync_sqlite_to_postgres.py --sqlite data/db/anpr.db --postgres-dsn "$POSTGRES_DSN"
-```
-
-3. Убедиться, что API работает с PostgreSQL как primary backend:
-- `storage.postgres_dsn` должен быть задан в `settings.json`;
-- endpoint `PUT /api/storage/dual-write` теперь требует `postgres_dsn` и управляет только compatibility write в SQLite.
-
----
-
-## WebRTC adapter quick-start
-
-1. Запустите внешний медиасервер (например MediaMTX/go2rtc) с включённым WHEP path.
-2. Настройте gateway через API:
-```bash
-curl -X PUT http://127.0.0.1:8091/video/webrtc/config \
-  -H "Content-Type: application/json" \
-  -d '{
-    "enabled": true,
-    "provider": "mediamtx",
-    "signaling_base_url": "http://127.0.0.1:8889",
-    "whep_path_template": "/whep/channel_{channel_id}",
-    "play_url_template": "http://127.0.0.1:8889/whep/channel_{channel_id}"
-  }'
-```
-3. Проверьте конфигурацию:
-```bash
-curl -s http://127.0.0.1:8091/video/webrtc/config
-```
-4. Для теста WHEP offer отправляйте raw SDP:
-```bash
-curl -X POST "http://127.0.0.1:8091/video/webrtc/1/offer" \
-  -H "Content-Type: application/sdp" \
-  --data-binary @offer.sdp
-```
-5. При недоступном WebRTC продолжайте просмотр через HLS (`/hls/.../index.m3u8`).
-
----
-
-## Ограничения и следующие шаги
-
-- WebRTC реализован как адаптер-прокси (WHEP offer proxy) и требует внешнего медиасервера (например MediaMTX/go2rtc).
-- Для production PostgreSQL-first нужны retry/backoff, метрики и алерты недоступности БД.
-- SQLite остаётся только как compatibility path (опционально) для безопасного перехода.
-
----
-
-## Статус этапов миграции
-
-- ✅ Этап 0: аудит
-- ✅ Этап 1: архитектурный план
-- ✅ Этап 2: extraction core service
-- ✅ Этап 3: event & telemetry
-- ✅ Этап 4: web UI MVP -> upgraded dashboard
-- ✅ Этап 5: video gateway (HLS + profiles + WebRTC adapter)
-- ✅ Этап 6: data lifecycle (retention/rotation/export)
-- ✅ Этап 7: web-only переход (desktop UI удалён)
-
-
-
-## Troubleshooting: web страница не открывается
-
-1. Проверьте, что API реально запущен в том же Python окружении:
-```bash
-python -m uvicorn apps.api.main:app --host 127.0.0.1 --port 8080
-```
-
-2. Быстрая проверка доступности:
-```bash
-curl -i http://127.0.0.1:8080/
-curl -i http://127.0.0.1:8080/api/health
-```
-Оба запроса должны вернуть `200 OK`.
-
-3. Если `uvicorn` не найден, установите зависимости:
-```bash
-pip install -r requirements.txt
-```
-
-4. Если root URL открывается, но live tiles пустые — проверьте Video Gateway:
-```bash
-python -m uvicorn apps.video_gateway.main:app --host 127.0.0.1 --port 8091
-curl -i http://127.0.0.1:8091/video/health
-```
-
-5. Для запуска WebRTC path нужен внешний медиасервер (MediaMTX/go2rtc) и доступный `ffmpeg`.
-
-6. PowerShell важно: команды запуска сервисов нужно выполнять в **отдельных терминалах** (или через `Start-Process`), иначе первая команда блокирует выполнение следующих.
-Пример:
-```powershell
-Start-Process python -ArgumentList "-m uvicorn apps.api.main:app --host 0.0.0.0 --port 8080"
-Start-Process python -ArgumentList "-m uvicorn apps.video_gateway.main:app --host 0.0.0.0 --port 8091"
-Start-Process python -ArgumentList "-m uvicorn apps.worker.main:app --host 0.0.0.0 --port 8092"
-```
-
-7. `GET /` на порту 8092 (worker) теперь возвращает сервисную информацию; рабочий health endpoint: `GET /worker/health`.
+MIT
