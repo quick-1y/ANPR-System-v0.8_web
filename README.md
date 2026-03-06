@@ -1,181 +1,280 @@
-# ANPR System - Automatic Number Plate Recognition
+# ANPR-System-v0.8 (Web-first, standalone streaming refactor)
 
 ![Python](https://img.shields.io/badge/Python-3.13-blue.svg)
 ![FastAPI](https://img.shields.io/badge/API-FastAPI-009688.svg)
 ![Web UI](https://img.shields.io/badge/UI-Web--only-4CAF50.svg)
-![YOLOv8](https://img.shields.io/badge/Detection-YOLOv8-red.svg)
-![CRNN](https://img.shields.io/badge/OCR-CRNN-orange.svg)
-![SQLite/PostgreSQL](https://img.shields.io/badge/Data-SQLite%20%2B%20PostgreSQL-lightgrey.svg)
+![Streaming](https://img.shields.io/badge/Streaming-Standalone%20HLS-orange.svg)
+![Detection](https://img.shields.io/badge/Detection-YOLOv8-red.svg)
+![OCR](https://img.shields.io/badge/OCR-CRNN-orange.svg)
+![Data](https://img.shields.io/badge/Data-SQLite%20%2B%20PostgreSQL-lightgrey.svg)
 
-Web-first система автоматического распознавания автомобильных номеров с server-side обработкой многоканального видео, backend API и операторской web-панелью.
+Web-first сервис для автоматического распознавания номерных знаков.
+Инференс, OCR, декодинг, постобработка и live preview выполняются **на сервере**.
 
-## Основные возможности
+---
 
-- **Многоканальная обработка** — независимый runtime для каждого канала
-- **Server-side ANPR pipeline** — детекция, OCR, постобработка и сохранение событий выполняются на сервере
-- **Web-интерфейс оператора** — просмотр каналов, статусов, событий, ROI и списков
-- **Полноценный раздел «Настройки»** — глобальные настройки, вкладки канала, ROI-редактор, CRUD контроллеров и глобальный debug через API
-- **Live-события** — поток обновлений через SSE
-- **Детальный просмотр события** — из журнала доступна карточка события с метаданными и кадрами распознавания
-- **Video Gateway** — HLS preview, профили качества `low / medium / high`
-- **Управление каналами** — запуск, остановка, перезапуск и изменение параметров через API
-- **Настройки каналов по группам** — отдельные секции для канала, детектора движения, детектора рамок, OCR и ROI
-- **ROI и фильтрация** — настройка зоны распознавания поверх кадра канала (по кнопке обновления кадра) и рабочих параметров канала
-- **Списки номеров** — белые/черные списки и логика принятия решений
-- **Data lifecycle** — retention, очистка, экспорт CSV/ZIP
-- **Подготовка к PostgreSQL** — dual-write и миграция из SQLite
+## Текущий статус репозитория
 
-## Архитектура
+Проект находится в переходном состоянии.
 
-Проект разделён на несколько сервисов:
+Что уже работает:
+- API сервис `apps/api/main.py`.
+- Web UI `apps/web/index.html`.
+- Runtime независимых ANPR-каналов.
+- SSE-поток событий `GET /api/events/stream`.
+- Retention / export / data lifecycle.
+- Video Gateway с HLS preview.
 
-- **API service** — основной backend и web UI
-- **Video Gateway** — live preview и управление видеопотоками
-- **Worker** — фоновые задачи хранения и retention
-- **ANPR Core** — распознавание, OCR, трекинг и обработка событий
+Что требует рефакторинга:
+- из продуктовой архитектуры должен быть удалён внешний медиасервер;
+- WebRTC adapter path не должен быть обязательной частью live preview;
+- lifecycle распознавания и lifecycle видеопревью должны быть связаны;
+- UI не должен зависеть от ручного `localhost:8091`;
+- ошибки video pipeline должны быть видимыми и диагностируемыми.
 
-Схема на уровне компонентов:
+> Важный принцип: проект должен работать как **самостоятельная система**, без обязательного внешнего video/SFU/media server.
+
+---
+
+## Целевая архитектура
+
+### Основная идея
+
+В системе остаются только собственные сервисы проекта:
+- `apps/api` — основной API, бизнес-логика, lifecycle каналов;
+- `apps/video_gateway` — встроенный сервер live preview на базе FFmpeg + HLS;
+- `apps/worker` — retention / export / фоновое обслуживание;
+- `apps/web` — операторская панель;
+- `packages/anpr_core` и `anpr/*` — runtime, CV/OCR и доменная логика.
+
+### Целевой video path
 
 ```text
-Web UI
-  │
-  ▼
-API Service (FastAPI)
-  │
-  ├── Channel lifecycle / ROI / lists / events
-  ├── SSE stream
-  ├── Data lifecycle
-  │
-  ├── ANPR Core
-  │     ├── Detection
-  │     ├── OCR
-  │     ├── Postprocessing
-  │     └── Channel runtime
-  │
-  └── Video Gateway
-        ├── HLS preview
-        └── Quality profiles / WebRTC adapter
+Camera / RTSP / file source
+        │
+        ├──> ANPR runtime (decode / detect / OCR / postprocess)
+        │
+        └──> Built-in Video Gateway (FFmpeg -> HLS)
+                      │
+                      └──> Web UI (hls.js / native HLS)
 ```
 
-## Технологический стек
+### Что исключается из продуктового пути
 
-- **Backend:** FastAPI, Uvicorn
-- **Детекция:** YOLOv8
-- **OCR:** CRNN
-- **Видео:** OpenCV, HLS, WebRTC adapter path
-- **Хранение:** SQLite по умолчанию, PostgreSQL для migration path / dual-write
-- **ML stack:** PyTorch 2.8.0, torchvision 0.23.0, torchaudio 2.8.0, ultralytics 8.3.20
+- внешний MediaMTX / go2rtc / SFU как обязательный компонент;
+- WebRTC adapter через внешний WHEP endpoint как обязательный live path;
+- ручное управление превью отдельно от канала, если канал уже запущен через API.
 
-## Установка
+---
 
-### Предварительные требования
+## Архитектурные правила
 
-- Python 3.13
-- pip
-- ffmpeg
+1. В браузер не переносить decode, inference, OCR или CV.
+2. Каналы должны обрабатываться независимо друг от друга.
+3. Live preview должен собираться только внутри проекта.
+4. При старте канала ANPR live preview должен стартовать автоматически, если preview включён.
+5. При остановке канала должны корректно останавливаться и ANPR runtime, и video session.
+6. UI должен по умолчанию использовать тот же origin или конфиг, полученный от API, а не жёстко прошитый localhost.
+7. Ошибки FFmpeg и video gateway не должны проглатываться молча.
+8. HLS является основным и обязательным live transport.
+9. WebRTC может существовать только как будущая необязательная внутренняя возможность, но не как зависимость от внешнего сервера.
+10. Любые изменения API и структуры проекта должны документироваться в этом README и в `AGENTS.md`.
 
-### Установка зависимостей
+---
 
+## Цели текущего этапа рефакторинга
+
+### 1. Сделать streaming полностью standalone
+- убрать зависимость от `mediamtx` и внешнего signaling/media path;
+- убрать обязательные WebRTC-конфиги из compose и runtime;
+- оставить встроенный HLS как основной live preview.
+
+### 2. Связать lifecycle канала и lifecycle превью
+- `POST /api/channels/{id}/start` должен запускать не только ANPR runtime, но и video preview;
+- `POST /api/channels/{id}/stop` должен останавливать оба процесса;
+- `POST /api/channels/{id}/restart` должен согласованно перезапускать оба контура.
+
+### 3. Исправить UX и конфигурацию UI
+- не использовать жёсткий `http://localhost:8091` как дефолт для production path;
+- показывать статус превью и явные ошибки;
+- не скрывать проблемы video gateway пустыми `catch`.
+
+### 4. Улучшить наблюдаемость
+- health/status endpoints должны показывать реальное состояние превью;
+- должны появиться причины ошибок: source open failed, ffmpeg missing, playlist timeout, unsupported source и т.д.;
+- при старте стрима должна быть проверка фактического появления HLS playlist.
+
+---
+
+## Ожидаемое состояние после рефакторинга
+
+### Live preview
+- встроенный HLS preview работает без внешнего медиасервера;
+- UI показывает видео по каждому активному каналу;
+- для тайлов доступны профили качества `low / medium / high`;
+- профили переключаются через API video gateway или единый API слой.
+
+### API / lifecycle
+- API канала остаётся главным входом управления;
+- video gateway может остаться отдельным сервисом, но не отдельной бизнес-сущностью для оператора;
+- оператор не должен вручную инициировать старт превью вне обычного старта канала.
+
+### Развёртывание
+- Docker Compose поднимает только сервисы проекта и PostgreSQL;
+- внешний video server не нужен;
+- локальный запуск остаётся простым и воспроизводимым.
+
+---
+
+## Рекомендуемая структура ответственности
+
+### `apps/api`
+Отвечает за:
+- CRUD каналов;
+- start / stop / restart каналов;
+- настройки OCR / filter / ROI / controllers;
+- health / telemetry / events;
+- координацию video preview lifecycle.
+
+### `apps/video_gateway`
+Отвечает за:
+- запуск и остановку FFmpeg-процессов для preview;
+- генерацию HLS playlist и segment-файлов;
+- переключение профилей качества;
+- health и diagnostics preview-процессов.
+
+### `apps/web`
+Отвечает за:
+- отображение состояния каналов;
+- отображение HLS live tiles;
+- показ ошибок preview;
+- переключение профилей качества;
+- отсутствие хардкода на `localhost` в production path.
+
+### `apps/worker`
+Отвечает за:
+- retention / cleanup / export;
+- обработку фоновых задач жизненного цикла данных.
+
+---
+
+## Требования к реализации video preview
+
+### Источники
+Поддерживаемые источники должны быть явно определены.
+Минимально допустимо:
+- RTSP;
+- локальные/сетевые файлы, если они уже поддерживаются проектом.
+
+Если какие-то типы источников не поддерживаются preview-контуром, это должно быть:
+- валидировано заранее;
+- явно отражено в ошибке API/UI.
+
+### FFmpeg
+- запуск FFmpeg должен логироваться;
+- stderr не должен полностью теряться;
+- при неудачном старте должен возвращаться диагностируемый статус;
+- при остановке процессы должны корректно завершаться и не оставлять мусорных сессий.
+
+### HLS
+- preview считается успешным только после появления валидного `index.m3u8`;
+- URL preview должен быть пригоден для браузера без ручного редактирования;
+- относительные URL предпочтительнее абсолютных, если сервисы находятся за одним reverse proxy.
+
+---
+
+## Целевой Docker Compose
+
+В целевом состоянии compose должен содержать только:
+- `api`
+- `video_gateway`
+- `retention_worker`
+- `postgres`
+
+`mediamtx` и иные внешние video-компоненты должны быть удалены из основного пути.
+
+---
+
+## Целевые API-правила
+
+### Основное
+Существующие endpoint-ы по возможности сохраняются:
+- `GET /api/channels`
+- `POST /api/channels`
+- `PUT /api/channels/{id}`
+- `DELETE /api/channels/{id}`
+- `POST /api/channels/{id}/start`
+- `POST /api/channels/{id}/stop`
+- `POST /api/channels/{id}/restart`
+- `GET /api/events`
+- `GET /api/events/stream`
+
+### Preview / diagnostics
+Допустимо добавить или улучшить:
+- `GET /video/health`
+- `GET /video/channels`
+- `POST /video/channels/{id}/start`
+- `POST /video/channels/{id}/stop`
+- `POST /video/channels/{id}/profile`
+- `GET /video/channels/{id}/status`
+- `GET /video/channels/{id}/diagnostics`
+
+WebRTC-specific endpoints должны быть либо удалены из продуктового пути, либо помечены как deprecated/optional.
+
+---
+
+## Минимальные критерии приёмки
+
+Задача считается выполненной, если:
+1. Запущенный канал показывает live video в UI.
+2. Для работы live video не нужен MediaMTX или иной внешний видеосервер.
+3. `docker compose up --build` поднимает рабочую standalone-схему.
+4. `POST /api/channels/{id}/start` запускает и распознавание, и preview.
+5. `POST /api/channels/{id}/stop` останавливает и распознавание, и preview.
+6. UI не зависит от ручного `localhost:8091`.
+7. Ошибки video preview видны в API/UI и пригодны для диагностики.
+8. README и `AGENTS.md` соответствуют новой архитектуре.
+
+---
+
+## Быстрый запуск после завершения рефакторинга
+
+### Локально
 ```bash
-git clone https://github.com/quick-1y/ANPR-System-v0.8_web.git
-cd ANPR-System-v0.8_web
-```
-```bash
-# Для CPU:
-pip install -r requirements.txt --index-url https://download.pytorch.org/whl/cpu --extra-index-url https://pypi.org/simple
-```
-```bash
-# Для CUDA 2.8.0:
-pip install torch==2.8.0 torchvision==0.23.0 torchaudio==2.8.0 --index-url https://download.pytorch.org/whl/cu128
+uvicorn apps.api.main:app --host 0.0.0.0 --port 8080
+uvicorn apps.video_gateway.main:app --host 0.0.0.0 --port 8091
+uvicorn apps.worker.main:app --host 0.0.0.0 --port 8092
 ```
 
-## Быстрый старт
-
-### Локальный запуск
-
-Откройте три отдельных терминала.
-
-**1. API + Web UI**
-```bash
-python -m uvicorn apps.api.main:app --host 127.0.0.1 --port 8080
-```
-
-**2. Video Gateway**
-```bash
-python -m uvicorn apps.video_gateway.main:app --host 127.0.0.1--port 8091
-```
-
-**3. Worker**
-```bash
-python -m uvicorn apps.worker.main:app --host 127.0.0.1 --port 8092
-```
-
-### Точки доступа
-
-- **Web UI / API:** `http://localhost:8080`
-- **Video Gateway health:** `http://localhost:8091/video/health`
-- **Worker health:** `http://localhost:8092/worker/health`
-
-## Docker Compose
-
+### Docker Compose
 ```bash
 cd infra
 docker compose up --build
 ```
 
-Compose поднимает:
+Ожидаемые точки входа:
+- Web UI / API: `http://localhost:8080`
+- Video Gateway health: `http://localhost:8091/video/health`
+- Worker health: `http://localhost:8092/worker/health`
 
-- `api`
-- `video_gateway`
-- `retention_worker`
-- `mediamtx`
-- `postgres`
+---
 
-## Хранение данных
+## Ограничения и дальнейшие шаги
 
-- **По умолчанию:** SQLite
-- **События:** база событий распознавания, метаданные, пути к кадрам и кропам номеров
-- **Медиа:** скриншоты и кропы сохраняются на диск
-- **Экспорт:** CSV / ZIP через data lifecycle API
-- **PostgreSQL:** поддерживается как путь миграции и dual-write, но не является обязательным storage по умолчанию
+- На текущем этапе приоритет — **надёжный standalone HLS preview**.
+- Сначала нужно устранить архитектурную зависимость от внешнего медиасервера.
+- Только после этого имеет смысл обсуждать внутренний low-latency path, если он действительно нужен продукту.
+- PostgreSQL migration path и data lifecycle остаются отдельной задачей и не должны ломаться этим рефакторингом.
 
-## Структура проекта
+---
 
-```text
-ANPR-System-v0.8_web/
-├── apps/
-│   ├── api/              # backend API и web entrypoint
-│   ├── video_gateway/    # HLS / video service
-│   ├── worker/           # retention и фоновые задачи
-│   └── web/              # операторский web UI
-├── packages/
-│   └── anpr_core/        # channel runtime, event bus, sinks
-├── anpr/                 # detection, OCR, preprocessing, postprocessing, infrastructure
-├── infra/
-│   ├── docker-compose.yml
-│   ├── postgres/
-│   ├── nginx/
-│   └── k8s/
-├── scripts/
-│   └── sync_sqlite_to_postgres.py
-├── config/
-├── models/
-├── requirements.txt
-└── settings.json
-```
+## Статус этапов
 
-## PostgreSQL migration
-
-Если нужен переход на PostgreSQL:
-
-1. Примените схему из `infra/postgres/schema.sql`
-2. Синхронизируйте исторические данные через `scripts/sync_sqlite_to_postgres.py`
-3. Включите dual-write в настройках storage
-
-## Статус проекта
-
-Текущая версия — **web-only ANPR system**. Desktop UI удалён, основной интерфейс работы теперь веб-панель.
-
-## License
-
-MIT
+- ✅ Web-only продуктовый путь
+- ✅ Server-side ANPR runtime
+- ✅ SSE events
+- ✅ Data lifecycle / retention / export
+- ✅ HLS preview как база
+- 🔄 Рефакторинг в standalone streaming architecture без внешнего медиасервера
+- 🔄 Сцепление API lifecycle и video lifecycle
+- 🔄 Диагностика и UX ошибок preview
