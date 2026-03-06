@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <title>ANPR Operator Dashboard</title>
+  <style>
+    body{margin:0;font-family:Arial;background:#0f1115;color:#e8eaed}
+    .top{display:flex;gap:12px;align-items:center;padding:10px 14px;background:#1a1f29;position:sticky;top:0}
+    .wrap{padding:12px}
+    .grid{display:grid;grid-template-columns:2fr 1fr;gap:12px}
+    .card{background:#1a1f29;border:1px solid #2d3542;border-radius:8px;padding:10px}
+    .tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px}
+    .tile{border:1px solid #2d3542;border-radius:8px;padding:8px;background:#11161f}
+    .title{display:flex;justify-content:space-between;align-items:center;font-size:13px;margin-bottom:6px}
+    .state{padding:2px 6px;border-radius:12px;font-size:11px}
+    .run{background:#1f6f43}.stop{background:#6b2a2a}.err{background:#7a4b00}
+    video{width:100%;background:#000;border-radius:6px;min-height:140px}
+    button,input,select,textarea{background:#0f1115;color:#e8eaed;border:1px solid #2d3542;border-radius:6px;padding:6px}
+    .row{display:flex;gap:6px;flex-wrap:wrap}
+    .events{max-height:70vh;overflow:auto}
+    .event{padding:8px;border-bottom:1px solid #2d3542;cursor:pointer}
+    .event:hover{background:#202838}
+    .muted{opacity:.75;font-size:12px}
+    pre{white-space:pre-wrap}
+  </style>
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+</head>
+<body>
+<div class="top">
+  <strong>ANPR Operator Dashboard</strong>
+  <span class="muted" id="health"></span>
+  <input id="apiBase" value="" placeholder="API base, напр. http://localhost:8080" style="min-width:260px"/>
+  <input id="videoBase" value="http://localhost:8091" placeholder="Video Gateway" style="min-width:220px"/>
+  <button onclick="refreshAll()">Обновить</button>
+</div>
+
+<div class="wrap grid">
+  <section class="card">
+    <h3>Каналы и live tiles</h3>
+    <div class="row">
+      <input id="newName" placeholder="Имя канала" />
+      <input id="newSource" placeholder="RTSP/файл/индекс" />
+      <button onclick="createChannel()">Добавить канал</button>
+    </div>
+    <div class="tiles" id="tiles"></div>
+  </section>
+
+  <section class="card">
+    <h3>Live события</h3>
+    <div class="events" id="events"></div>
+    <h4>Детали события</h4>
+    <pre id="eventDetail" class="muted">Выберите событие в ленте</pre>
+  </section>
+
+  <section class="card">
+    <h3>Controller management</h3>
+    <div class="row">
+      <input id="ctrlName" placeholder="Название"/>
+      <input id="ctrlAddress" placeholder="Адрес"/>
+      <button onclick="createController()">Создать</button>
+    </div>
+    <pre id="controllers" class="muted"></pre>
+  </section>
+
+  <section class="card">
+    <h3>Data layer</h3>
+    <div class="row">
+      <button onclick="loadPolicy()">Policy</button>
+      <button onclick="runRetention()">Run retention</button>
+      <button onclick="window.open(api('/api/data/export/events.csv', true),'_blank')">Export CSV</button>
+    </div>
+    <pre id="policy" class="muted"></pre>
+  </section>
+</div>
+
+<script>
+const players = new Map();
+const tileObserver = new IntersectionObserver(onTileVisibility, {threshold:[0,0.25,0.6]});
+const tileVisibility = new Map();
+
+function api(path, abs=false){
+  const base = document.getElementById('apiBase').value.trim();
+  if (abs) return `${base}${path}`;
+  return `${base}${path}`;
+}
+function vapi(path){ return `${document.getElementById('videoBase').value.trim()}${path}`; }
+
+async function jfetch(url, method='GET', body=null){
+  const r = await fetch(url, {method, headers:{'Content-Type':'application/json'}, body: body ? JSON.stringify(body): null});
+  if(!r.ok) throw new Error(await r.text());
+  return await r.json();
+}
+
+
+
+function onTileVisibility(entries){
+  for(const entry of entries){
+    const id = Number(entry.target.dataset.channelId || 0);
+    if(!id) continue;
+    const ratio = entry.intersectionRatio || 0;
+    const profile = ratio >= 0.6 ? "medium" : "low";
+    const prev = tileVisibility.get(id);
+    tileVisibility.set(id, profile);
+    if(prev && prev !== profile){
+      setProfile(id, profile).catch(()=>{});
+    }
+  }
+}
+
+function stateBadge(state){
+  if(state==='running') return `<span class='state run'>running</span>`;
+  if(state==='error') return `<span class='state err'>error</span>`;
+  return `<span class='state stop'>${state||'stopped'}</span>`;
+}
+
+function attachHls(videoEl, url){
+  if(videoEl.dataset.url===url) return;
+  videoEl.dataset.url=url;
+  if(players.get(videoEl.id)){ try{players.get(videoEl.id).destroy();}catch(e){} }
+  if(window.Hls && Hls.isSupported()){
+    const hls = new Hls({lowLatencyMode:true});
+    hls.loadSource(url);
+    hls.attachMedia(videoEl);
+    players.set(videoEl.id,hls);
+  } else {
+    videoEl.src=url;
+  }
+}
+
+async function ensureVideo(channel){
+  try{
+    await jfetch(vapi(`/video/channels/${channel.id}/start`), 'POST', {source: channel.source, profile:'low'});
+  }catch(e){/* already started or gateway unavailable */}
+}
+
+async function setProfile(id, profile){
+  await jfetch(vapi(`/video/channels/${id}/profile`), 'POST', {profile});
+  await refreshChannels();
+}
+
+async function startChannel(id){ await jfetch(api(`/api/channels/${id}/start`),'POST'); refreshChannels(); }
+async function stopChannel(id){ await jfetch(api(`/api/channels/${id}/stop`),'POST'); refreshChannels(); }
+
+async function refreshHealth(){
+  try{
+    const health = await jfetch(api('/api/health'));
+    document.getElementById('health').textContent = `API: ${health.status}, channels=${health.channels_total}, running=${health.channels_running}`;
+  }catch(e){document.getElementById('health').textContent = `API error: ${e}`;}
+}
+
+async function refreshChannels(){
+  const channels = await jfetch(api('/api/channels'));
+  const tiles = document.getElementById('tiles');
+  tiles.innerHTML='';
+  for(const ch of channels){
+    const m = ch.metrics||{};
+    const div = document.createElement('div');
+    div.className='tile';
+    div.dataset.channelId=String(ch.id);
+    div.innerHTML = `
+      <div class='title'><span>#${ch.id} ${ch.name}</span>${stateBadge(m.state)}</div>
+      <div class='muted'>FPS: ${(m.fps||0).toFixed(1)} | latency: ${(m.latency_ms||0).toFixed(1)} ms</div>
+      <video id='v-${ch.id}' autoplay muted controls playsinline></video>
+      <div class='row' style='margin-top:6px'>
+        <button onclick='startChannel(${ch.id})'>Start</button>
+        <button onclick='stopChannel(${ch.id})'>Stop</button>
+        <button onclick='setProfile(${ch.id},"low")'>low</button>
+        <button onclick='setProfile(${ch.id},"medium")'>medium</button>
+        <button onclick='setProfile(${ch.id},"high")'>high</button>
+      </div>
+    `;
+    tiles.appendChild(div);
+    tileObserver.observe(div);
+    await ensureVideo(ch);
+  }
+
+  try{
+    const vchannels = await jfetch(vapi('/video/channels'));
+    for(const key of Object.keys(vchannels)){
+      const item = vchannels[key];
+      const el = document.getElementById(`v-${item.channel_id}`);
+      if(!el) continue;
+      attachHls(el, `${document.getElementById('videoBase').value}${item.hls_url}`);
+    }
+  }catch(e){}
+}
+
+async function createChannel(){
+  await jfetch(api('/api/channels'),'POST',{name:document.getElementById('newName').value,source:document.getElementById('newSource').value});
+  refreshChannels();
+}
+
+async function createController(){
+  const body={name:document.getElementById('ctrlName').value,type:'DTWONDER2CH',address:document.getElementById('ctrlAddress').value,password:'0',relays:[{mode:'pulse',timer_seconds:1,hotkey:''},{mode:'pulse',timer_seconds:1,hotkey:''}]};
+  await jfetch(api('/api/controllers'),'POST',body);
+  loadControllers();
+}
+
+async function loadControllers(){
+  const data = await jfetch(api('/api/controllers'));
+  document.getElementById('controllers').textContent = JSON.stringify(data,null,2);
+}
+
+async function loadPolicy(){
+  const p = await jfetch(api('/api/data/policy'));
+  document.getElementById('policy').textContent = JSON.stringify(p,null,2);
+}
+
+async function runRetention(){
+  const p = await jfetch(api('/api/data/retention/run'),'POST');
+  document.getElementById('policy').textContent = JSON.stringify(p,null,2);
+}
+
+function setupEvents(){
+  const feed = document.getElementById('events');
+  const detail = document.getElementById('eventDetail');
+  const es = new EventSource(api('/api/events/stream'));
+  es.onmessage = (msg)=>{
+    const ev = JSON.parse(msg.data);
+    const div = document.createElement('div');
+    div.className='event';
+    div.innerHTML = `<strong>${ev.plate}</strong> <span class='muted'>${ev.channel}</span><br><span class='muted'>${new Date(ev.timestamp).toLocaleString()} conf=${(ev.confidence||0).toFixed(2)}</span>`;
+    div.onclick = ()=>{ detail.textContent = JSON.stringify(ev,null,2); };
+    feed.prepend(div);
+  };
+}
+
+async function refreshAll(){
+  await refreshHealth();
+  await refreshChannels();
+  await loadControllers();
+  await loadPolicy();
+}
+
+document.getElementById('apiBase').value = window.location.origin;
+refreshAll();
+setupEvents();
+setInterval(refreshHealth,5000);
+setInterval(refreshChannels,8000);
+</script>
+</body>
+</html>
