@@ -23,10 +23,9 @@ The system processes multiple video channels on the server side. Each channel wo
    - Do not move recognition logic into the browser.
 
 5. **Separate service responsibilities**
-   - `apps/api` — backend API, web entrypoint, SSE, channel/config/list/controller/data endpoints
-   - `apps/video_gateway` — HLS live preview, profile switching, WebRTC adapter/discovery contract
+   - `apps/api` — backend API, web entrypoint, SSE, channel/config/list/controller/data endpoints и встроенный live preview API
    - `apps/worker` — retention scheduler and background data lifecycle execution
-   - `packages/anpr_core` — channel runtime, event flow, event sinks, service-neutral orchestration
+   - `packages/anpr_core` — channel runtime, event flow, event sinks, service-neutral orchestration и shared preview frame cache
    - `anpr` — reusable domain logic and infrastructure: detection, OCR, pipeline, preprocessing, postprocessing, settings, storage, controllers
 
 6. **Settings are the source of truth**
@@ -52,29 +51,15 @@ Owns:
 - Channel lifecycle endpoints: start / stop / restart
 - Channel health and telemetry
 - SSE stream for live events
+- Built-in preview endpoints (`snapshot.jpg`, `preview/status`, `preview.mjpg`)
 - Plate lists and entries
 - Controller configuration and test actions
 - Data retention policy, manual retention runs, CSV / ZIP export
 - Storage mode configuration
 
 Does **not** own:
-- FFmpeg HLS process lifecycle
-- Media transport orchestration
 - Browser-side recognition
 - Heavy domain logic that belongs in reusable core modules
-
-### `apps/video_gateway`
-Owns:
-- HLS preview generation
-- FFmpeg process management per active preview session
-- Quality profiles (`low`, `medium`, `high`)
-- WebRTC integration config / discovery contract for an external provider
-
-Does **not** own:
-- ANPR recognition
-- Event persistence
-- Lists, controllers, or retention policy
-- Business configuration storage
 
 ### `apps/worker`
 Owns:
@@ -148,10 +133,10 @@ Owns:
 ## Video and Streaming Rules
 
 1. Live preview is an operator feature, not the source of truth for ANPR events.
-2. `apps/video_gateway` owns FFmpeg process lifecycle and profile switching.
-3. HLS is the current live-preview path.
-4. WebRTC support is an adapter/discovery contract for an external provider, not an embedded media server implementation.
-5. Do not mix video transport concerns into `apps/api` unless there is a strong architectural reason.
+2. The product must stay standalone: no required external media/signaling server.
+3. Preferred preview path is built-in MJPEG from channel runtime (`/api/channels/{id}/preview.mjpg`).
+4. Keep single-ingest-per-channel whenever possible: ANPR and preview share the same runtime capture.
+5. UI must display real preview state/errors from backend metrics; no false "live" indicators.
 
 ## Storage and Data Lifecycle Rules
 
@@ -226,7 +211,7 @@ Do **not**:
 - add local GUI architecture or non-web operator entrypoints
 - move ANPR inference into the browser
 - tightly couple channels together
-- move HLS/FFmpeg gateway logic into the API service without justification
+- reintroduce mandatory external media server/signaling dependency for preview
 - add undocumented breaking changes to API, storage, or settings
 - let frontend become the source of truth for channel state or configuration
 

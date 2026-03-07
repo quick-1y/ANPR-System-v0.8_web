@@ -22,6 +22,8 @@ class ChannelMetrics:
     latency_ms: float = 0.0
     last_event_at: Optional[str] = None
     last_error: Optional[str] = None
+    preview_ready: bool = False
+    preview_last_frame_at: Optional[str] = None
 
 
 @dataclass
@@ -30,6 +32,8 @@ class ChannelContext:
     thread: Optional[threading.Thread] = None
     stop_event: threading.Event = field(default_factory=threading.Event)
     metrics: ChannelMetrics = field(default_factory=ChannelMetrics)
+    latest_jpeg: Optional[bytes] = None
+    latest_frame_ts: float = 0.0
 
 
 class ChannelProcessor:
@@ -48,6 +52,13 @@ class ChannelProcessor:
     def list_states(self) -> Dict[int, ChannelMetrics]:
         with self._lock:
             return {cid: ctx.metrics for cid, ctx in self._contexts.items()}
+
+    def get_preview_frame(self, channel_id: int) -> tuple[Optional[bytes], float]:
+        with self._lock:
+            ctx = self._contexts.get(channel_id)
+            if not ctx:
+                return None, 0.0
+            return ctx.latest_jpeg, ctx.latest_frame_ts
 
     def ensure_channel(self, channel: Dict[str, Any]) -> None:
         channel_id = int(channel["id"])
@@ -125,10 +136,23 @@ class ChannelProcessor:
                 if not ok:
                     metrics.timeout_count += 1
                     metrics.reconnect_count += 1
+                    metrics.preview_ready = False
                     cap.release()
                     time.sleep(1)
                     cap = cv2.VideoCapture(str(channel.get("source", "0")))
                     continue
+
+                ok_enc, preview_buf = cv2.imencode('.jpg', frame, [int(cv2.IMWRITE_JPEG_QUALITY), 80])
+                if ok_enc:
+                    now_ts = time.time()
+                    with self._lock:
+                        channel_ctx = self._contexts.get(channel_id)
+                        if channel_ctx:
+                            channel_ctx.latest_jpeg = preview_buf.tobytes()
+                            channel_ctx.latest_frame_ts = now_ts
+                    metrics.preview_ready = True
+                    metrics.preview_last_frame_at = datetime.now(timezone.utc).isoformat()
+
                 detections = detector.track(frame)
                 results = pipeline.process_frame(frame, detections)
                 for detection in results:
@@ -159,8 +183,15 @@ class ChannelProcessor:
             metrics.state = "error"
             metrics.error_count += 1
             metrics.last_error = str(exc)
+            metrics.preview_ready = False
             logger.exception("Ошибка канала %s", channel_id)
         finally:
             metrics.state = "stopped"
+            metrics.preview_ready = False
+            with self._lock:
+                channel_ctx = self._contexts.get(channel_id)
+                if channel_ctx:
+                    channel_ctx.latest_jpeg = None
+                    channel_ctx.latest_frame_ts = 0.0
             if cap is not None:
                 cap.release()

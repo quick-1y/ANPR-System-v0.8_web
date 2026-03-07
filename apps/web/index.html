@@ -5,7 +5,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>ANPR Desktop — Новый UI</title>
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Onest:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-<script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
 <style>
   :root {--bg:#0a0c12;--surface:#10131c;--panel:#14182380;--card:#161b28;--border:#1e2535;--border2:#252d3e;--accent:#7c6bfa;--accent2:#9b8fff;--accent-glow:rgba(124,107,250,0.18);--danger:#f43f5e;--success:#34d399;--warning:#fbbf24;--text1:#e8ecf4;--text2:#8b96b0;--text3:#4e586e;--field:#0d1018;--mono:'JetBrains Mono', monospace;--sans:'Onest', sans-serif;}
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -21,7 +20,7 @@
   .content{flex:1;overflow:hidden;display:flex}.tab-pane{display:none;width:100%;height:100%}.tab-pane.active{display:flex}
   #tab-obs{flex-direction:row}.obs-left{flex:1;display:flex;flex-direction:column;padding:12px;gap:10px;min-width:0}.obs-toolbar{display:flex;align-items:center;gap:8px}.obs-label{font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.08em}
   .grid-select,.filter-input,.s-input{background:var(--field);border:1px solid var(--border2);border-radius:7px;color:var(--text1);font-family:var(--sans);font-size:12px;padding:4px 8px;outline:none}
-  .video-grid{flex:1;display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;gap:8px;min-height:0}.video-cell{background:var(--field);border:1px solid var(--border);border-radius:10px;position:relative;overflow:hidden;display:flex;align-items:center;justify-content:center;cursor:pointer}.video-cell.active{border-color:var(--accent)}.video-cell video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;background:#000;z-index:1}
+  .video-grid{flex:1;display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;gap:8px;min-height:0}.video-cell{background:var(--field);border:1px solid var(--border);border-radius:10px;position:relative;overflow:hidden;display:flex;align-items:center;justify-content:center;cursor:pointer}.video-cell.active{border-color:var(--accent)}.video-cell img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;background:#000;z-index:1}
   .video-cell-bg{position:absolute;inset:0;background:repeating-linear-gradient(45deg,transparent,transparent 20px,rgba(255,255,255,.01) 20px,rgba(255,255,255,.01) 40px);z-index:0}.cam-label{position:absolute;top:8px;left:8px;background:rgba(10,12,18,.85);border:1px solid var(--border2);padding:3px 8px;border-radius:5px;font-family:var(--mono);font-size:10px;color:var(--text2);z-index:3}
   .cam-status{position:absolute;top:8px;right:8px;width:7px;height:7px;border-radius:50%;z-index:3}.cam-status.live{background:var(--success);box-shadow:0 0 6px var(--success)}.cam-status.off{background:var(--text3)}
   .cam-plate{position:absolute;bottom:8px;left:50%;transform:translateX(-50%);background:rgba(10,12,18,.9);border:1px solid var(--border2);padding:4px 12px;border-radius:6px;font-family:var(--mono);font-size:12px;font-weight:700;color:var(--accent2);letter-spacing:.12em;z-index:3;display:none}
@@ -69,7 +68,6 @@
   </div>
   <div class="titlebar-right">
     <input id="apiBase" class="api-input" placeholder="API" />
-    <input id="videoBase" class="api-input" value="http://localhost:8091" placeholder="Video" />
     <div class="sys-stat"><span>CPU</span> <b id="cpuStat">12%</b></div>
     <div class="sys-stat"><span>RAM</span> <b id="ramStat">38%</b></div>
     <button class="icon-btn" title="Тема">☀</button>
@@ -112,11 +110,9 @@
 <div class="event-modal" id="eventModal"><div class="event-modal-card"><div class="event-modal-head"><span>Детальный просмотр события</span><div style="flex:1"></div><button class="btn btn-ghost" id="eventModalClose">Закрыть</button></div><div class="event-modal-body"><div><div style="font-size:12px;color:var(--text2);margin-bottom:6px">Кадр распознавания</div><div class="event-modal-img"><img id="eventFrameImg" alt="frame"></div><div style="font-size:12px;color:var(--text2);margin:10px 0 6px">Кадр номера</div><div class="event-modal-img" style="min-height:150px"><img id="eventPlateImg" alt="plate"></div></div><div class="event-meta" id="eventMeta"></div></div></div></div>
 
 <script>
-const players = new Map();
 const state = {channels: [], events: [], lists: [], selectedListId: null, allEvents: []};
 let eventSource = null;
 function api(path){ return `${document.getElementById('apiBase').value.trim()}${path}`; }
-function vapi(path){ return `${document.getElementById('videoBase').value.trim()}${path}`; }
 async function jfetch(url, method='GET', body=null){ const r = await fetch(url,{method,headers:{'Content-Type':'application/json'},body: body ? JSON.stringify(body) : null}); if(!r.ok) throw new Error(await r.text()); return r.status===204?null:r.json(); }
 function flagByCountry(code){ return ({RU:'🇷🇺',BY:'🇧🇾',KZ:'🇰🇿'})[String(code||'').toUpperCase()] || '🏳️'; }
 function switchTab(name){ document.querySelectorAll('.ttab').forEach(el=>el.classList.toggle('active', el.dataset.tab===name)); document.querySelectorAll('.tab-pane').forEach(p=>p.classList.remove('active')); document.getElementById(`tab-${name}`).classList.add('active'); }
@@ -127,7 +123,6 @@ async function refreshChannels(){
   state.channels = await jfetch(api('/api/channels'));
   renderVideoGrid(); renderChannelsList(); fillChannelFilter();
 }
-async function ensureVideo(ch){ try{ await jfetch(vapi(`/video/channels/${ch.id}/start`),'POST',{source:ch.source,profile:'low'});}catch(_e){} }
 function gridConfig(v){ if(v==='1x1') return [1,1]; if(v==='2x3') return [2,3]; if(v==='3x3') return [3,3]; return [2,2]; }
 async function renderVideoGrid(){
   const grid = document.getElementById('videoGrid'); const [rows, cols] = gridConfig(document.getElementById('gridSelect').value);
@@ -137,11 +132,21 @@ async function renderVideoGrid(){
   document.getElementById('channelsCount').textContent = `${state.channels.length} канала`;
   for(const [idx,ch] of visible.entries()){
     const running = (ch.metrics||{}).state === 'running';
+    const previewReady = Boolean((ch.metrics||{}).preview_ready);
+    const lastError = (ch.metrics||{}).last_error;
+    const statusText = !running ? 'Канал остановлен' : (previewReady ? 'Live preview' : (lastError ? `Ошибка: ${lastError}` : 'Ожидание кадра...')); 
     const cell = document.createElement('div'); cell.className = `video-cell ${idx===0?'active':''}`;
-    cell.innerHTML = `<div class='video-cell-bg'></div><video id='v-${ch.id}' autoplay muted playsinline controls></video><div class='cam-no-signal'><svg width='32' height='32' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.5'><path d='M23 7l-7 5 7 5V7z'/><rect x='1' y='5' width='15' height='14' rx='2'/></svg><p>${running?'Идёт захват...':'Нет сигнала'}</p></div><div class='cam-label'>CAM-${String(ch.id).padStart(2,'0')} · ${ch.name}</div><div class='cam-status ${running?'live':'off'}'></div><div class='cam-plate' id='plate-${ch.id}'></div>`;
-    grid.appendChild(cell); await ensureVideo(ch);
+    cell.innerHTML = `<div class='video-cell-bg'></div><img id='v-${ch.id}' alt='preview CAM-${ch.id}' /><div class='cam-no-signal' id='nosig-${ch.id}'><svg width='32' height='32' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.5'><path d='M23 7l-7 5 7 5V7z'/><rect x='1' y='5' width='15' height='14' rx='2'/></svg><p>${statusText}</p></div><div class='cam-label'>CAM-${String(ch.id).padStart(2,'0')} · ${ch.name}</div><div class='cam-status ${previewReady?'live':'off'}'></div><div class='cam-plate' id='plate-${ch.id}'></div>`;
+    grid.appendChild(cell);
+    const el = document.getElementById(`v-${ch.id}`);
+    if(el){
+      const url = api(`/api/channels/${ch.id}/preview.mjpg`);
+      if(el.dataset.url!==url){
+        el.dataset.url = url;
+        el.src = `${url}?t=${Date.now()}`;
+      }
+    }
   }
-  try{ const vchs = await jfetch(vapi('/video/channels')); Object.values(vchs).forEach(item=>{ const el = document.getElementById(`v-${item.channel_id}`); if(!el) return; const url = `${document.getElementById('videoBase').value}${item.hls_url}`; if(el.dataset.url===url) return; el.dataset.url=url; const old=players.get(el.id); if(old){try{old.destroy();}catch(_e){}} if(window.Hls && Hls.isSupported()){const h=new Hls({lowLatencyMode:true}); h.loadSource(url); h.attachMedia(el); players.set(el.id,h);} else el.src=url; }); }catch(_e){}
 }
 
 function pushEvent(ev){

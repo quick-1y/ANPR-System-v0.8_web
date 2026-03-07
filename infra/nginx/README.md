@@ -2,7 +2,8 @@
 
 Reverse-proxy маршрутизация:
 - `/` -> `apps/web` + `apps/api`
-- `/hls` -> `apps/video_gateway`
+- `/api/channels/*/preview.mjpg` -> `apps/api` (multipart MJPEG preview)
 - `/worker/*` -> `apps/worker` (ограничить доступ в prod)
-- `/webrtc/*` -> upstream медиасервер (MediaMTX/go2rtc) при необходимости
 - SSE/WebSocket проксирование для live событий
+
+Важно: standalone-режим не требует внешнего media/signaling server.

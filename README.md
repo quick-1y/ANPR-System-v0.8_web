@@ -15,7 +15,7 @@ Web-first система автоматического распознавани
 - **Server-side ANPR pipeline** — детекция, OCR, постобработка и сохранение событий выполняются на сервере
 - **Web-интерфейс оператора** — просмотр каналов, статусов, событий, ROI и списков
 - **Live-события** — поток обновлений через SSE
-- **Video Gateway** — HLS preview, профили качества `low / medium / high`
+- **Встроенный live preview** — MJPEG-поток из того же channel runtime (single-ingest-per-channel)
 - **Управление каналами** — запуск, остановка, перезапуск и изменение параметров через API
 - **ROI и фильтрация** — настройка зоны распознавания и рабочих параметров канала
 - **Списки номеров** — белые/черные списки и логика принятия решений
@@ -26,8 +26,7 @@ Web-first система автоматического распознавани
 
 Проект разделён на несколько сервисов:
 
-- **API service** — основной backend и web UI
-- **Video Gateway** — live preview и управление видеопотоками
+- **API service** — основной backend, web UI, channel runtime и встроенный preview
 - **Worker** — фоновые задачи хранения и retention
 - **ANPR Core** — распознавание, OCR, трекинг и обработка событий
 
@@ -49,9 +48,8 @@ API Service (FastAPI)
   │     ├── Postprocessing
   │     └── Channel runtime
   │
-  └── Video Gateway
-        ├── HLS preview
-        └── Quality profiles / WebRTC adapter
+  └── Built-in Preview
+        └── MJPEG stream `/api/channels/{id}/preview.mjpg`
 ```
 
 ## Технологический стек
@@ -59,7 +57,7 @@ API Service (FastAPI)
 - **Backend:** FastAPI, Uvicorn
 - **Детекция:** YOLOv8
 - **OCR:** CRNN
-- **Видео:** OpenCV, HLS, WebRTC adapter path
+- **Видео:** OpenCV, встроенный MJPEG preview
 - **Хранение:** SQLite по умолчанию, PostgreSQL для migration path / dual-write
 - **ML stack:** PyTorch 2.8.0, torchvision 0.23.0, torchaudio 2.8.0, ultralytics 8.3.20
 
@@ -69,7 +67,6 @@ API Service (FastAPI)
 
 - Python 3.13
 - pip
-- ffmpeg
 
 ### Установка зависимостей
 
@@ -99,12 +96,7 @@ pip install torch==2.8.0 torchvision==0.23.0 torchaudio==2.8.0 --index-url https
 python -m uvicorn apps.api.main:app --host 0.0.0.0 --port 8080
 ```
 
-**2. Video Gateway**
-```bash
-python -m uvicorn apps.video_gateway.main:app --host 0.0.0.0 --port 8091
-```
-
-**3. Worker**
+**2. Worker**
 ```bash
 python -m uvicorn apps.worker.main:app --host 0.0.0.0 --port 8092
 ```
@@ -112,7 +104,7 @@ python -m uvicorn apps.worker.main:app --host 0.0.0.0 --port 8092
 ### Точки доступа
 
 - **Web UI / API:** `http://localhost:8080`
-- **Video Gateway health:** `http://localhost:8091/video/health`
+- **Live preview MJPEG:** `http://localhost:8080/api/channels/{id}/preview.mjpg`
 - **Worker health:** `http://localhost:8092/worker/health`
 
 ## Docker Compose
@@ -125,10 +117,22 @@ docker compose up --build
 Compose поднимает:
 
 - `api`
-- `video_gateway`
 - `retention_worker`
-- `mediamtx`
 - `postgres`
+
+
+## Диагностика live preview
+
+Система не требует внешнего медиасервера: preview формируется внутри API из того же канального ingest, что и ANPR.
+
+Проверки:
+
+1. `GET /api/channels` — у канала в `metrics` должны быть `state=running` и `preview_ready=true`.
+2. `GET /api/channels/{id}/preview/status` — показывает `last_frame_at`, `last_error`.
+3. `GET /api/channels/{id}/preview.mjpg` — должен отдавать multipart MJPEG в браузер.
+4. `GET /api/channels/{id}/snapshot.jpg` — быстрый снимок из последнего кадра runtime (без нового RTSP-подключения).
+
+Если `preview_ready=false`, UI показывает текст ошибки из `metrics.last_error` вместо ложного статуса live.
 
 ## Хранение данных
 
@@ -144,7 +148,7 @@ Compose поднимает:
 ANPR-System-v0.8_web/
 ├── apps/
 │   ├── api/              # backend API и web entrypoint
-│   ├── video_gateway/    # HLS / video service
+│   ├── video_gateway/    # legacy модуль (не обязателен для standalone runtime)
 │   ├── worker/           # retention и фоновые задачи
 │   └── web/              # операторский web UI
 ├── packages/

@@ -321,37 +321,66 @@ def list_channels() -> List[Dict[str, Any]]:
 @app.get("/api/channels/{channel_id}/snapshot.jpg")
 def channel_snapshot(channel_id: int) -> Response:
     channels = {int(item["id"]): item for item in settings.get_channels()}
-    channel = channels.get(channel_id)
-    if not channel:
+    if channel_id not in channels:
         raise HTTPException(status_code=404, detail="Канал не найден")
 
-    cap = None
-    try:
-        import cv2
+    frame, _ = processor.get_preview_frame(channel_id)
+    if not frame:
+        metrics = processor.list_states().get(channel_id)
+        detail = "Preview кадр ещё не готов"
+        if metrics and metrics.last_error:
+            detail = f"Preview недоступен: {metrics.last_error}"
+        raise HTTPException(status_code=503, detail=detail)
+    return Response(content=frame, media_type="image/jpeg")
 
-        cap = cv2.VideoCapture(str(channel.get("source", "0")))
-        try:
-            cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 3000)
-            cap.set(cv2.CAP_PROP_READ_TIMEOUT_MSEC, 3000)
-        except Exception:
-            pass
-        ok, frame = cap.read()
-        if not ok or frame is None:
-            raise HTTPException(status_code=502, detail="Не удалось получить кадр из источника")
-        ok_enc, buf = cv2.imencode('.jpg', frame)
-        if not ok_enc:
-            raise HTTPException(status_code=500, detail="Не удалось закодировать кадр")
-        return Response(content=buf.tobytes(), media_type="image/jpeg")
-    except HTTPException:
-        raise
-    except Exception as exc:
-        raise HTTPException(status_code=503, detail=f"Snapshot недоступен: {exc}") from exc
-    finally:
-        if cap is not None:
-            try:
-                cap.release()
-            except Exception:
-                pass
+
+@app.get("/api/channels/{channel_id}/preview/status")
+def channel_preview_status(channel_id: int) -> Dict[str, Any]:
+    channels = {int(item["id"]): item for item in settings.get_channels()}
+    if channel_id not in channels:
+        raise HTTPException(status_code=404, detail="Канал не найден")
+
+    metrics = processor.list_states().get(channel_id)
+    frame, frame_ts = processor.get_preview_frame(channel_id)
+    return {
+        "channel_id": channel_id,
+        "state": metrics.state if metrics else "unknown",
+        "preview_ready": bool(frame),
+        "last_frame_unix": frame_ts,
+        "last_frame_at": metrics.preview_last_frame_at if metrics else None,
+        "last_error": metrics.last_error if metrics else None,
+    }
+
+
+@app.get("/api/channels/{channel_id}/preview.mjpg")
+async def channel_preview_stream(channel_id: int, request: Request) -> StreamingResponse:
+    channels = {int(item["id"]): item for item in settings.get_channels()}
+    if channel_id not in channels:
+        raise HTTPException(status_code=404, detail="Канал не найден")
+
+    async def frame_generator():
+        last_ts = 0.0
+        while not STREAM_SHUTDOWN.is_set():
+            if await request.is_disconnected():
+                break
+            frame, frame_ts = processor.get_preview_frame(channel_id)
+            if frame and frame_ts > last_ts:
+                last_ts = frame_ts
+                yield (
+                    b"--frame\r\n"
+                    b"Content-Type: image/jpeg\r\n"
+                    + f"Content-Length: {len(frame)}\r\n\r\n".encode("ascii")
+                    + frame
+                    + b"\r\n"
+                )
+            else:
+                await asyncio.sleep(0.08)
+
+    return StreamingResponse(
+        frame_generator(),
+        media_type="multipart/x-mixed-replace; boundary=frame",
+        headers={"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"},
+    )
 
 
 @app.get("/api/channels/{channel_id}/health")
