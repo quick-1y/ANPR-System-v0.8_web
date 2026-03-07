@@ -30,26 +30,44 @@ Web-first система автоматического распознавани
 - **Worker** — фоновые задачи хранения и retention
 - **ANPR Core** — распознавание, OCR, трекинг и обработка событий
 
-Схема на уровне компонентов:
+Диаграмма взаимодействия компонентов:
 
-```text
-Web UI
-  │
-  ▼
-API Service (FastAPI)
-  │
-  ├── Channel lifecycle / ROI / lists / events
-  ├── SSE stream
-  ├── Data lifecycle
-  │
-  ├── ANPR Core
-  │     ├── Detection
-  │     ├── OCR
-  │     ├── Postprocessing
-  │     └── Channel runtime
-  │
-  └── Built-in Preview
-        └── MJPEG stream `/api/channels/{id}/preview.mjpg`
+```mermaid
+flowchart LR
+    OP[Оператор\nБраузер / Web UI]
+
+    subgraph API[apps/api — FastAPI + Web entrypoint]
+        CH[Channel API\nCRUD / start-stop-restart / ROI / lists]
+        SSE[SSE stream\nсобытия и статусы]
+        PREV[Built-in preview API\nsnapshot.jpg / preview/status / preview.mjpg]
+        DATA[Data API\nretention / export CSV-ZIP / storage mode]
+    end
+
+    subgraph CORE[packages/anpr_core + anpr]
+        RT[Изолированный runtime на канал\nзахват кадра / reconnect / metrics]
+        PIPE[ANPR pipeline\nDetection → OCR → postprocessing]
+        EVT[Event sink / persistence]
+    end
+
+    WRK[apps/worker\nпланировщик retention]
+    DB[(SQLite / PostgreSQL)]
+    FS[(media files\nframes / crops)]
+
+    OP -->|HTTP/REST| CH
+    OP -->|SSE| SSE
+    OP -->|MJPEG| PREV
+    OP -->|Retention / Export actions| DATA
+
+    CH --> RT
+    PREV --> RT
+    RT --> PIPE
+    PIPE --> EVT
+    EVT --> DB
+    EVT --> FS
+
+    DATA --> DB
+    WRK -->|periodic cleanup| DB
+    WRK -->|media cleanup| FS
 ```
 
 ## Технологический стек
