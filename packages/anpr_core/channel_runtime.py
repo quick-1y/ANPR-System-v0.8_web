@@ -130,6 +130,8 @@ class ChannelProcessor:
 
             frames = 0
             window_start = time.monotonic()
+            preview_interval_s = 0.2
+            last_preview_encode_at = 0.0
             while not stop_event.is_set():
                 started = time.monotonic()
                 ok, frame = cap.read()
@@ -142,16 +144,19 @@ class ChannelProcessor:
                     cap = cv2.VideoCapture(str(channel.get("source", "0")))
                     continue
 
-                ok_enc, preview_buf = cv2.imencode('.jpg', frame, [int(cv2.IMWRITE_JPEG_QUALITY), 80])
-                if ok_enc:
-                    now_ts = time.time()
-                    with self._lock:
-                        channel_ctx = self._contexts.get(channel_id)
-                        if channel_ctx:
-                            channel_ctx.latest_jpeg = preview_buf.tobytes()
-                            channel_ctx.latest_frame_ts = now_ts
-                    metrics.preview_ready = True
-                    metrics.preview_last_frame_at = datetime.now(timezone.utc).isoformat()
+                now_monotonic = time.monotonic()
+                if now_monotonic - last_preview_encode_at >= preview_interval_s:
+                    ok_enc, preview_buf = cv2.imencode('.jpg', frame, [int(cv2.IMWRITE_JPEG_QUALITY), 80])
+                    if ok_enc:
+                        now_ts = time.time()
+                        with self._lock:
+                            channel_ctx = self._contexts.get(channel_id)
+                            if channel_ctx:
+                                channel_ctx.latest_jpeg = preview_buf.tobytes()
+                                channel_ctx.latest_frame_ts = now_ts
+                        metrics.preview_ready = True
+                        metrics.preview_last_frame_at = datetime.now(timezone.utc).isoformat()
+                        last_preview_encode_at = now_monotonic
 
                 detections = detector.track(frame)
                 results = pipeline.process_frame(frame, detections)
