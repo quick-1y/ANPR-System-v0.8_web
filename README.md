@@ -61,13 +61,15 @@ Web-first система автоматического распознавани
 
 ## Важное замечание по текущей реализации
 
-В коде уже есть настройки `detection_mode`, `motion_threshold`, `motion_frame_stride`, `motion_activation_frames`, `motion_release_frames`, а также отдельный модуль `MotionDetector`.
+Runtime канала поддерживает два режима обработки:
 
-Однако текущий runtime канала в `packages/anpr_core/channel_runtime.py` сейчас работает по фактической схеме:
+- `detection_mode="always"` — каждый кадр проходит стандартную ветку `detector.track(frame) -> pipeline.process_frame(...)`.
+- `detection_mode="motion"` — перед ANPR используется `MotionDetector`:
+  - preview (`latest_jpeg`, `snapshot.jpg`, `preview.mjpg`) продолжает обновляться всегда;
+  - ANPR-вычисления запускаются только при активном движении;
+  - дополнительно учитывается `detector_frame_stride`, чтобы ограничить частоту вызова detector даже при активном движении.
 
-`VideoCapture -> detector.track(frame) -> pipeline.process_frame(frame, detections)`
-
-То есть **в активной боевой ветке отдельный motion gate сейчас не подключён**. Ниже диаграммы отражают именно текущую реализацию проекта, а не только наличие настроек в UI.
+Если `detection_mode` отсутствует или имеет неизвестное значение, применяется безопасный fallback на `always`.
 
 ---
 

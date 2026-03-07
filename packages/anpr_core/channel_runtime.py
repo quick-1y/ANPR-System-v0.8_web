@@ -24,6 +24,10 @@ class ChannelMetrics:
     last_error: Optional[str] = None
     preview_ready: bool = False
     preview_last_frame_at: Optional[str] = None
+    processed_frames: int = 0
+    motion_skipped_frames: int = 0
+    detector_skipped_frames: int = 0
+    motion_active: bool = False
 
 
 @dataclass
@@ -113,6 +117,7 @@ class ChannelProcessor:
         cap = None
         try:
             from anpr.pipeline.factory import build_components
+            from anpr.detection.motion_detector import MotionDetector, MotionDetectorConfig
 
             pipeline, detector = build_components(
                 best_shots=int(channel.get("best_shots", 3)),
@@ -124,11 +129,46 @@ class ChannelProcessor:
                 max_plate_size=channel.get("max_plate_size"),
                 size_filter_enabled=bool(channel.get("size_filter_enabled", True)),
             )
+            detection_mode_raw = str(channel.get("detection_mode", "always")).strip().lower()
+            if detection_mode_raw not in {"always", "motion"}:
+                logger.warning(
+                    "Канал %s: неизвестный detection_mode='%s', используется fallback 'always'",
+                    channel_id,
+                    detection_mode_raw,
+                )
+                detection_mode = "always"
+            else:
+                detection_mode = detection_mode_raw
+
+            detector_frame_stride = max(1, int(channel.get("detector_frame_stride", 1)))
+            motion_detector = None
+            if detection_mode == "motion":
+                motion_config = MotionDetectorConfig(
+                    threshold=float(channel.get("motion_threshold", MotionDetectorConfig.threshold)),
+                    frame_stride=max(1, int(channel.get("motion_frame_stride", MotionDetectorConfig.frame_stride))),
+                    activation_frames=max(1, int(channel.get("motion_activation_frames", MotionDetectorConfig.activation_frames))),
+                    release_frames=max(1, int(channel.get("motion_release_frames", MotionDetectorConfig.release_frames))),
+                )
+                motion_detector = MotionDetector(motion_config)
+                logger.info(
+                    "Канал %s: detection_mode=motion, detector_frame_stride=%s, motion_config=%s",
+                    channel_id,
+                    detector_frame_stride,
+                    motion_config,
+                )
+            else:
+                logger.info(
+                    "Канал %s: detection_mode=always, detector_frame_stride=%s",
+                    channel_id,
+                    detector_frame_stride,
+                )
+
             cap = cv2.VideoCapture(str(channel.get("source", "0")))
             if not cap.isOpened():
                 raise RuntimeError(f"Не удалось открыть источник {channel.get('source')}")
 
             frames = 0
+            detector_input_frames = 0
             window_start = time.monotonic()
             preview_interval_s = 0.2
             last_preview_encode_at = 0.0
@@ -158,8 +198,36 @@ class ChannelProcessor:
                         metrics.preview_last_frame_at = datetime.now(timezone.utc).isoformat()
                         last_preview_encode_at = now_monotonic
 
+                motion_active = True
+                if motion_detector is not None:
+                    motion_active = bool(motion_detector.update(frame))
+                    metrics.motion_active = motion_active
+                    if not motion_active:
+                        metrics.motion_skipped_frames += 1
+                        frames += 1
+                        elapsed = time.monotonic() - window_start
+                        if elapsed >= 1.0:
+                            metrics.fps = frames / elapsed
+                            frames = 0
+                            window_start = time.monotonic()
+                        metrics.latency_ms = (time.monotonic() - started) * 1000.0
+                        continue
+
+                detector_input_frames += 1
+                if detector_input_frames % detector_frame_stride != 0:
+                    metrics.detector_skipped_frames += 1
+                    frames += 1
+                    elapsed = time.monotonic() - window_start
+                    if elapsed >= 1.0:
+                        metrics.fps = frames / elapsed
+                        frames = 0
+                        window_start = time.monotonic()
+                    metrics.latency_ms = (time.monotonic() - started) * 1000.0
+                    continue
+
                 detections = detector.track(frame)
                 results = pipeline.process_frame(frame, detections)
+                metrics.processed_frames += 1
                 for detection in results:
                     plate = detection.get("text")
                     if not plate:
