@@ -26,7 +26,7 @@
   .cam-plate{position:absolute;bottom:8px;left:50%;transform:translateX(-50%);background:rgba(10,12,18,.9);border:1px solid var(--border2);padding:4px 12px;border-radius:6px;font-family:var(--mono);font-size:12px;font-weight:700;color:var(--accent2);letter-spacing:.12em;z-index:3;display:none}
   .cam-no-signal{color:var(--text3);font-size:11px;font-family:var(--mono);display:flex;flex-direction:column;align-items:center;gap:5px;z-index:2}
   .obs-right{width:280px;border-left:1px solid var(--border);display:flex;flex-direction:column}.panel-header{padding:12px 14px 10px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:var(--text2);border-bottom:1px solid var(--border)}
-  .event-feed{flex:1;overflow-y:auto;padding:8px;display:flex;flex-direction:column;gap:5px}.ev-item{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:8px 10px;cursor:pointer;display:flex;align-items:center;gap:9px}.ev-item.hot{border-color:rgba(124,107,250,.3)}
+  .event-feed{flex:1;overflow:hidden;padding:8px;display:flex;flex-direction:column;gap:5px}.ev-item{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:8px 10px;cursor:pointer;display:flex;align-items:center;gap:9px}.ev-item.hot{border-color:rgba(124,107,250,.3)}
   .ev-flag{font-size:16px}.ev-body{flex:1}.ev-plate{font-family:var(--mono);font-size:12.5px;font-weight:700;letter-spacing:.08em}.ev-meta{font-size:10.5px;color:var(--text3);margin-top:1px;display:flex;gap:6px}.ev-meta span{color:var(--text2)}.ev-conf{font-family:var(--mono);font-size:10px;color:var(--success)}.ev-conf.warn{color:var(--warning)}
   #tab-journal{flex-direction:column;padding:14px;gap:12px;overflow:hidden}.filter-card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px 16px;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
   .filter-group{display:flex;flex-direction:column;gap:4px}.filter-label{font-size:10.5px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.07em}
@@ -124,36 +124,101 @@ async function refreshChannels(){
   renderVideoGrid(); renderChannelsList(); fillChannelFilter();
 }
 function gridConfig(v){ if(v==='1x1') return [1,1]; if(v==='2x3') return [2,3]; if(v==='3x3') return [3,3]; return [2,2]; }
-async function renderVideoGrid(){
-  const grid = document.getElementById('videoGrid'); const [rows, cols] = gridConfig(document.getElementById('gridSelect').value);
-  grid.style.gridTemplateColumns = `repeat(${cols}, 1fr)`; grid.style.gridTemplateRows = `repeat(${rows}, 1fr)`;
-  grid.innerHTML = '';
-  const visible = state.channels.slice(0, rows*cols);
-  document.getElementById('channelsCount').textContent = `${state.channels.length} канала`;
-  for(const [idx,ch] of visible.entries()){
-    const running = (ch.metrics||{}).state === 'running';
-    const previewReady = Boolean((ch.metrics||{}).preview_ready);
-    const lastError = (ch.metrics||{}).last_error;
-    const statusText = !running ? 'Канал остановлен' : (lastError ? `Ошибка: ${lastError}` : 'Ожидание кадра...');
-    const noSignalHtml = previewReady ? '' : `<div class='cam-no-signal' id='nosig-${ch.id}'><svg width='32' height='32' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.5'><path d='M23 7l-7 5 7 5V7z'/><rect x='1' y='5' width='15' height='14' rx='2'/></svg><p>${statusText}</p></div>`;
-    const cell = document.createElement('div'); cell.className = `video-cell ${idx===0?'active':''}`;
-    cell.innerHTML = `<div class='video-cell-bg'></div><img id='v-${ch.id}' alt='preview CAM-${ch.id}' />${noSignalHtml}<div class='cam-label'>CAM-${String(ch.id).padStart(2,'0')} · ${ch.name}</div><div class='cam-status ${previewReady?'live':'off'}'></div><div class='cam-plate' id='plate-${ch.id}'></div>`;
-    grid.appendChild(cell);
-    const el = document.getElementById(`v-${ch.id}`);
-    if(el){
-      const url = api(`/api/channels/${ch.id}/preview.mjpg`);
-      if(el.dataset.url!==url){
-        el.dataset.url = url;
-        el.src = `${url}?t=${Date.now()}`;
-      }
-    }
+function statusTextForChannel(ch){
+  const running = (ch.metrics||{}).state === 'running';
+  const lastError = (ch.metrics||{}).last_error;
+  return !running ? 'Канал остановлен' : (lastError ? `Ошибка: ${lastError}` : 'Ожидание кадра...');
+}
+
+function buildNoSignalHtml(statusText){
+  return `<div class='cam-no-signal'><svg width='32' height='32' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.5'><path d='M23 7l-7 5 7 5V7z'/><rect x='1' y='5' width='15' height='14' rx='2'/></svg><p>${statusText}</p></div>`;
+}
+
+function ensurePreviewStream(img, channelId){
+  if(!img) return;
+  const url = api(`/api/channels/${channelId}/preview.mjpg`);
+  if(img.dataset.url!==url){
+    img.dataset.url = url;
+    img.src = url;
   }
 }
 
+function createVideoCell(ch, idx){
+  const previewReady = Boolean((ch.metrics||{}).preview_ready);
+  const statusText = statusTextForChannel(ch);
+  const cell = document.createElement('div');
+  cell.className = `video-cell ${idx===0?'active':''}`;
+  cell.dataset.channelId = String(ch.id);
+  const noSignalHtml = previewReady ? '' : buildNoSignalHtml(statusText);
+  cell.innerHTML = `<div class='video-cell-bg'></div><img id='v-${ch.id}' alt='preview CAM-${ch.id}' />${noSignalHtml}<div class='cam-label'>CAM-${String(ch.id).padStart(2,'0')} · ${ch.name}</div><div class='cam-status ${previewReady?'live':'off'}'></div><div class='cam-plate' id='plate-${ch.id}'></div>`;
+  ensurePreviewStream(cell.querySelector('img'), ch.id);
+  return cell;
+}
+
+function updateVideoCell(cell, ch, idx){
+  const previewReady = Boolean((ch.metrics||{}).preview_ready);
+  cell.classList.toggle('active', idx===0);
+  const label = cell.querySelector('.cam-label');
+  if(label) label.textContent = `CAM-${String(ch.id).padStart(2,'0')} · ${ch.name}`;
+  const statusDot = cell.querySelector('.cam-status');
+  if(statusDot){ statusDot.classList.toggle('live', previewReady); statusDot.classList.toggle('off', !previewReady); }
+  const existingNoSignal = cell.querySelector('.cam-no-signal');
+  if(previewReady){
+    if(existingNoSignal) existingNoSignal.remove();
+  }else{
+    const statusText = statusTextForChannel(ch);
+    if(existingNoSignal){
+      const statusTextNode = existingNoSignal.querySelector('p');
+      if(statusTextNode) statusTextNode.textContent = statusText;
+    }else{
+      const img = cell.querySelector('img');
+      if(img) img.insertAdjacentHTML('afterend', buildNoSignalHtml(statusText));
+    }
+  }
+  ensurePreviewStream(cell.querySelector('img'), ch.id);
+}
+
+function renderVideoGrid(){
+  const grid = document.getElementById('videoGrid'); const [rows, cols] = gridConfig(document.getElementById('gridSelect').value);
+  grid.style.gridTemplateColumns = `repeat(${cols}, 1fr)`; grid.style.gridTemplateRows = `repeat(${rows}, 1fr)`;
+  const visible = state.channels.slice(0, rows*cols);
+  document.getElementById('channelsCount').textContent = `${state.channels.length} канала`;
+
+  const visibleIds = new Set(visible.map(ch=>String(ch.id)));
+  Array.from(grid.children).forEach((cell)=>{ if(!visibleIds.has(cell.dataset.channelId||'')){ cell.remove(); } });
+
+  for(const [idx,ch] of visible.entries()){
+    let cell = grid.querySelector(`.video-cell[data-channel-id='${ch.id}']`);
+    if(!cell){
+      cell = createVideoCell(ch, idx);
+    }else{
+      updateVideoCell(cell, ch, idx);
+    }
+    grid.appendChild(cell);
+  }
+}
+
+function getEventFeedVisibleLimit(){
+  const feed = document.getElementById('eventFeed');
+  if(!feed) return 1;
+  const gap = 5;
+  const sample = feed.querySelector('.ev-item');
+  const estimatedItemHeight = sample ? sample.getBoundingClientRect().height : 52;
+  const maxByHeight = Math.floor((feed.clientHeight + gap) / (estimatedItemHeight + gap));
+  return Math.max(1, maxByHeight || 1);
+}
+
+function renderEventFeed(){
+  const feed = document.getElementById('eventFeed');
+  if(!feed) return;
+  const visibleLimit = getEventFeedVisibleLimit();
+  feed.innerHTML='';
+  state.events.slice(0, visibleLimit).forEach((item,i)=>{ const conf = Number(item.confidence||0); const div=document.createElement('div'); div.className=`ev-item ${i===0?'hot':''}`; div.innerHTML = `<div class='ev-flag'>${flagByCountry(item.country)}</div><div class='ev-body'><div class='ev-plate'>${item.plate||'—'}</div><div class='ev-meta'>${item.channel||`CAM-${item.channel_id||''}`} · <span>${new Date(item.timestamp||Date.now()).toLocaleTimeString()}</span></div></div><div class='ev-conf ${conf<0.85?'warn':''}'>${conf.toFixed(2)}</div>`; div.onclick=()=>highlightPlate(item); feed.appendChild(div); });
+}
+
 function pushEvent(ev){
-  state.events.unshift(ev); if(state.events.length>80) state.events.pop();
-  const feed = document.getElementById('eventFeed'); feed.innerHTML='';
-  state.events.slice(0,25).forEach((item,i)=>{ const conf = Number(item.confidence||0); const div=document.createElement('div'); div.className=`ev-item ${i===0?'hot':''}`; div.innerHTML = `<div class='ev-flag'>${flagByCountry(item.country)}</div><div class='ev-body'><div class='ev-plate'>${item.plate||'—'}</div><div class='ev-meta'>${item.channel||`CAM-${item.channel_id||''}`} · <span>${new Date(item.timestamp||Date.now()).toLocaleTimeString()}</span></div></div><div class='ev-conf ${conf<0.85?'warn':''}'>${conf.toFixed(2)}</div>`; div.onclick=()=>highlightPlate(item); feed.appendChild(div); });
+  state.events.unshift(ev); if(state.events.length>200) state.events.pop();
+  renderEventFeed();
   addDebug(`[INFO] event: ${ev.plate||'-'} conf=${Number(ev.confidence||0).toFixed(2)}`,'ok');
 }
 function highlightPlate(ev){ const ch = state.channels.find(c=>String(c.name)===String(ev.channel)||Number(c.id)===Number(ev.channel_id)); if(!ch) return; const plate = document.getElementById(`plate-${ch.id}`); if(!plate) return; plate.textContent = ev.plate||''; plate.style.display='block'; setTimeout(()=>plate.style.display='none',3000); }
@@ -207,7 +272,7 @@ async function saveController(){ if(!selectedControllerId) return; await jfetch(
 async function deleteController(){ if(!selectedControllerId) return; if(!confirm('Удалить выбранный контроллер?')) return; await jfetch(api(`/api/controllers/${selectedControllerId}`),'DELETE'); await loadControllers(); addDebug('[OK] controller deleted','ok'); }
 async function testController(relay){ if(!selectedControllerId) return; await jfetch(api(`/api/controllers/${selectedControllerId}/test`),'POST',{relay_index:relay,is_on:true}); addDebug(`[OK] relay ${relay} test sent`,'ok'); }
 
-function addDebug(msg, type='info'){ const log=document.getElementById('debugLog'); const line=document.createElement('div'); line.className=`log-line ${type}`; line.innerHTML=`<span class='log-ts'>${new Date().toLocaleTimeString()}</span> ${msg}`; log.prepend(line); }
+function addDebug(msg, type='info'){ const log=document.getElementById('debugLog'); const line=document.createElement('div'); line.className=`log-line ${type}`; line.innerHTML=`<span class='log-ts'>${new Date().toLocaleTimeString()}</span> ${msg}`; log.prepend(line); const maxLines=300; while(log.children.length>maxLines){ log.removeChild(log.lastElementChild); } }
 async function setupStream(){ if(eventSource){ try{ eventSource.close(); }catch(_e){} } eventSource = new EventSource(api('/api/events/stream')); eventSource.onmessage = m=>{ try{ pushEvent(JSON.parse(m.data)); }catch(_e){} }; eventSource.onerror = ()=>addDebug('[WARN] stream reconnect','warn'); }
 function fillChannelFilter(){ const sel=document.getElementById('fltChannel'); const cur=sel.value; sel.innerHTML='<option value="">Все каналы</option>'; state.channels.forEach(c=>{ const o=document.createElement('option'); o.value=String(c.channel||c.id); o.textContent=`CAM-${String(c.id).padStart(2,'0')}`; sel.appendChild(o); }); sel.value=cur; }
 function closeEventModal(){ document.getElementById('eventModal').classList.remove('active'); }
@@ -224,7 +289,7 @@ document.getElementById('exportListBtn').onclick=()=>window.open(api('/api/data/
 document.getElementById('saveGeneralBtn').onclick=saveGeneral; document.getElementById('saveChannelBtn').onclick=saveChannel; document.getElementById('deleteChannelBtn').onclick=deleteChannel; document.getElementById('createChannelBtn').onclick=createChannel; document.getElementById('createControllerBtn').onclick=createController; document.getElementById('saveControllerBtn').onclick=saveController; document.getElementById('deleteControllerBtn').onclick=deleteController; document.getElementById('testRelay0Btn').onclick=()=>testController(0); document.getElementById('testRelay1Btn').onclick=()=>testController(1); document.getElementById('saveDebugBtn').onclick=saveGeneral; document.getElementById('ctrlSelect').onchange=(e)=>selectController(Number(e.target.value)); document.getElementById('roiRefreshBtn').onclick=refreshROISnapshot; document.getElementById('roiRefreshBtnBottom').onclick=refreshROISnapshot; document.getElementById('roiClearBtn').onclick=()=>{ roiPoints=[]; setVal('c_roi_points','[]'); drawROI(); }; document.getElementById('roiApplyBtn').onclick=()=>setVal('c_roi_points', JSON.stringify(roiPoints));
 
 setInterval(()=>{ document.getElementById('cpuStat').textContent = `${Math.round(8 + Math.random()*12)}%`; document.getElementById('ramStat').textContent = `${Math.round(35 + Math.random()*8)}%`; },2000);
-window.addEventListener('beforeunload', ()=>{ if(eventSource){ try{ eventSource.close(); }catch(_e){} eventSource=null; } }); window.addEventListener('pagehide', ()=>{ if(eventSource){ try{ eventSource.close(); }catch(_e){} eventSource=null; } });
+window.addEventListener('beforeunload', ()=>{ if(eventSource){ try{ eventSource.close(); }catch(_e){} eventSource=null; } }); window.addEventListener('pagehide', ()=>{ if(eventSource){ try{ eventSource.close(); }catch(_e){} eventSource=null; } }); window.addEventListener('resize', renderEventFeed);
 (async function init(){ document.getElementById('apiBase').value = window.location.origin; setupROI(); switchChannelSettingsTab('channel'); await refreshChannels(); await loadJournal(); await loadLists(); await loadGlobalSettings(); await loadControllers(); setupStream(); addDebug('[INFO] UI initialized'); setInterval(refreshChannels,8000); })();
 </script>
 </body>
