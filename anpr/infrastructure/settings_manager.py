@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 #/anpr/infrastructure/settings_manager.py
 import copy
-import json
 import os
 import tempfile
+
+import yaml
 import threading
 from typing import Any, Dict, List, Optional
 
@@ -44,8 +45,8 @@ class SettingsManager:
 
     _file_lock = threading.RLock()
 
-    def __init__(self, path: str = "settings.json") -> None:
-        self.path = path
+    def __init__(self, path: str | None = None) -> None:
+        self.path = path or os.getenv("SETTINGS_PATH", "settings.yaml")
         self._settings_lock = threading.RLock()
         self.settings = self._load()
 
@@ -59,7 +60,11 @@ class SettingsManager:
                 self._write_to_disk(defaults)
                 return defaults
             with open(self.path, "r", encoding="utf-8") as f:
-                data = json.load(f)
+                data = yaml.safe_load(f)
+            if data is None:
+                data = {}
+            if not isinstance(data, dict):
+                raise ValueError(f"Некорректный формат {self.path}: ожидается YAML-объект")
         return self._upgrade(data)
 
     def _upgrade(self, data: Dict[str, Any]) -> Dict[str, Any]:
@@ -444,7 +449,7 @@ class SettingsManager:
             )
             try:
                 with os.fdopen(fd, "w", encoding="utf-8") as f:
-                    json.dump(data, f, ensure_ascii=False, indent=2)
+                    yaml.safe_dump(data, f, allow_unicode=True, sort_keys=False)
                     f.flush()
                     os.fsync(f.fileno())
                 os.replace(tmp_path, self.path)
@@ -607,15 +612,16 @@ class SettingsManager:
                 self._save(settings_snapshot)
             storage = copy.deepcopy(self.settings.get("storage", {}))
 
-        env_postgres_dsn = os.getenv("POSTGRES_DSN", "").strip()
-        if env_postgres_dsn:
-            storage["postgres_dsn"] = env_postgres_dsn
+        env_postgres_dsn = os.getenv("POSTGRES_DSN", "postgresql://anpr:anpr@127.0.0.1:5432/anpr").strip()
+        storage["postgres_dsn"] = env_postgres_dsn
         return storage
 
     def save_storage_settings(self, storage_settings: Dict[str, Any]) -> None:
         with self._file_lock:
             current = self.settings.get("storage", {})
-            current.update(storage_settings)
+            sanitized = copy.deepcopy(storage_settings)
+            sanitized.pop("postgres_dsn", None)
+            current.update(sanitized)
             self.settings["storage"] = current
             settings_snapshot = copy.deepcopy(self.settings)
         self._save(settings_snapshot)
