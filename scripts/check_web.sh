@@ -1,13 +1,18 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-python -m uvicorn apps.api.main:app --host 127.0.0.1 --port 8080 >/tmp/anpr_api_check.log 2>&1 &
-PID=$!
-trap 'kill $PID >/dev/null 2>&1 || true' EXIT
-sleep 2
+PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$PROJECT_ROOT"
 
-echo "[check] GET /"
-curl -i -s http://127.0.0.1:8080/ | head -n 8
+cleanup() {
+  docker compose down >/dev/null 2>&1 || true
+}
+trap cleanup EXIT
 
-echo "[check] GET /api/health"
-curl -i -s http://127.0.0.1:8080/api/health | head -n 12
+docker compose up -d --build
+
+echo "[check] GET /api/health через nginx"
+curl -i -s "http://127.0.0.1:${HTTP_PORT:-8080}/api/health" | head -n 12
+
+echo "[check] GET /worker/health через nginx"
+curl -i -s "http://127.0.0.1:${HTTP_PORT:-8080}/worker/health" | head -n 12

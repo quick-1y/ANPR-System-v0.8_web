@@ -482,93 +482,98 @@ ANPR-System-v0.8_web/
 
 ---
 
-## Установка
+## Развёртывание (только Docker)
+
+Локальный запуск API/worker на хосте через `python -m uvicorn ...` **не поддерживается**.
+Поддерживаемая модель runtime: только Docker Compose.
 
 ### Предварительные требования
 
-- Python 3.13
-- pip
-- OpenCV runtime dependencies
-- модели YOLO и OCR в каталоге `models/`
+- Docker Engine 24+
+- Docker Compose v2+
+- Файлы моделей в `models/`
 
-### Клонирование
-
-```bash
-git clone https://github.com/quick-1y/ANPR-System-v0.8_web.git
-cd ANPR-System-v0.8_web
-```
-
-### Установка зависимостей
-
-#### CPU
-
-```bash
-pip install -r requirements.txt --index-url https://download.pytorch.org/whl/cpu --extra-index-url https://pypi.org/simple
-```
-
-#### CUDA 12.8 / PyTorch 2.8.0
-
-```bash
-pip install torch==2.8.0 torchvision==0.23.0 torchaudio==2.8.0 --index-url https://download.pytorch.org/whl/cu128
-pip install -r requirements.txt --extra-index-url https://pypi.org/simple
-```
-
----
-
-
-## Схема конфигурации
-
-- `.env` — переменные окружения, секреты и deploy/runtime-параметры (DSN, порты, `LOG_LEVEL`, `APP_ENV`, `DEBUG`, `SETTINGS_PATH`).
-- `settings.yaml` — прикладной runtime-конфиг системы (каналы, ROI, thresholds, контроллеры, правила обработки).
-- PostgreSQL — runtime-данные (события, списки и записи).
-
-## Локальный запуск
-
-1) Скопируйте примеры конфигурации и заполните их под своё окружение:
+### Подготовка конфигурации
 
 ```bash
 cp .env.example .env
 cp settings.example.yaml settings.yaml
 ```
 
-2) Запустите сервисы в двух терминалах (или через process manager), передав `--env-file .env` для uvicorn:
-
-### 1. API + Web UI
+### Рекомендуемый запуск
 
 ```bash
-python -m uvicorn apps.api.main:app --host 0.0.0.0 --port 8080 --env-file .env
+docker compose up -d --build
 ```
 
-### 2. Retention worker
+### Что поднимается
+
+- `nginx` — единственная опубликованная точка входа с хоста;
+- `api` — FastAPI + Web UI + channel runtime orchestration;
+- `retention_worker` — фоновый retention/cleanup;
+- `postgres` — PostgreSQL c инициализацией схемы.
+
+### Порты и доступ
+
+- `HTTP_PORT` (по умолчанию `8080`) публикуется наружу сервисом `nginx`.
+- `postgres` наружу не публикуется и доступен только внутри docker-сети.
+- `api` и `retention_worker` доступны по внутренним DNS-именам контейнерной сети (`api:8080`, `retention_worker:8092`).
+
+Точки доступа:
+- Web UI: `http://localhost:${HTTP_PORT}`
+- API health: `http://localhost:${HTTP_PORT}/api/health`
+- Worker health: `http://localhost:${HTTP_PORT}/worker/health`
+
+### Volumes
+
+- `pgdata` — данные PostgreSQL;
+- `media_data` — `data/screenshots` и `data/exports` для API/worker;
+- `logs_data` — `logs` для API/worker.
+
+### Логи и диагностика
 
 ```bash
-python -m uvicorn apps.worker.main:app --host 0.0.0.0 --port 8092 --env-file .env
+docker compose logs -f nginx api retention_worker postgres
 ```
 
-### Точки доступа
+Проверки:
 
-- Web UI: `http://localhost:8080`
-- API health: `http://localhost:8080/api/health`
-- Live preview MJPEG: `http://localhost:8080/api/channels/{id}/preview.mjpg`
-- Worker health: `http://localhost:8092/worker/health`
+```bash
+curl http://localhost:${HTTP_PORT}/api/health
+curl http://localhost:${HTTP_PORT}/worker/health
+curl http://localhost:${HTTP_PORT}/api/channels
+curl -o snapshot.jpg http://localhost:${HTTP_PORT}/api/channels/1/snapshot.jpg
+```
+
+### Обновление / пересборка
+
+```bash
+docker compose pull
+docker compose build --no-cache
+docker compose up -d
+```
+
+### Остановка
+
+```bash
+docker compose down
+```
+
+### Полный сброс данных (осторожно)
+
+```bash
+docker compose down -v
+```
 
 ---
 
-## Docker Compose
+## Схема конфигурации
 
-```bash
-docker compose up --build
-```
+- `.env` — единственный слой переменных окружения для контейнеров (`POSTGRES_*`, `POSTGRES_DSN`, `HTTP_PORT`, `LOG_LEVEL`, `SETTINGS_PATH`).
+- `settings.yaml` — прикладные настройки ANPR runtime (каналы, ROI, OCR/детекция, retention, контроллеры).
+- PostgreSQL — единственный backend runtime-данных (события, списки, записи).
 
-Поднимаются сервисы:
-- `api`
-- `retention_worker`
-- `postgres`
-
-Инициализация PostgreSQL выполняется через `database/postgres/schema.sql`.
-
-Compose загружает переменные из `.env` и передаёт их сервисам.
-Ключевые переменные: `POSTGRES_DSN`, `SETTINGS_PATH`, `API_PORT`, `WORKER_PORT`, `POSTGRES_*`.
+Важно: значения по умолчанию в конфигурации ориентированы на docker-сеть (`postgres` как hostname БД).
 
 ---
 
@@ -576,9 +581,7 @@ Compose загружает переменные из `.env` и передаёт 
 
 ### PostgreSQL (обязательно)
 
-События и списки номеров хранятся только в PostgreSQL через `POSTGRES_DSN` из `.env`.
-
-Если PostgreSQL временно недоступен, сервисы продолжают работать, а DB-зависимые endpoints возвращают controlled degradation (HTTP 503 или `status=error` для retention run).
+События и списки номеров хранятся только в PostgreSQL через `POSTGRES_DSN`.
 
 ### Медиа и экспорт
 
@@ -588,68 +591,19 @@ Compose загружает переменные из `.env` и передаёт 
 
 ---
 
-## Диагностика preview и live runtime
-
-### Проверка канала
-
-```bash
-curl http://localhost:8080/api/channels
-```
-
-Полезные поля в `metrics`:
-- `state`
-- `fps`
-- `latency_ms`
-- `preview_ready`
-- `preview_last_frame_at`
-- `last_error`
-- `reconnect_count`
-- `timeout_count`
-
-### Проверка preview status
-
-```bash
-curl http://localhost:8080/api/channels/1/preview/status
-```
-
-### Быстрый snapshot
-
-```bash
-curl -o snapshot.jpg http://localhost:8080/api/channels/1/snapshot.jpg
-```
-
-### MJPEG preview
-
-Откройте в браузере:
-
-```text
-http://localhost:8080/api/channels/1/preview.mjpg
-```
-
-### Worker health
-
-```bash
-curl http://localhost:8092/worker/health
-```
-
----
-
 ## Что ещё важно знать
 
 - preview и ANPR используют один и тот же ingest канала;
 - браузер не подключается к RTSP напрямую;
 - если чтение потока ломается, runtime пытается открыть источник заново;
 - live события идут отдельно от preview: preview — через MJPEG, события — через SSE;
-- в UI уже есть настройки motion detection, но основной runtime сейчас работает через прямой `YOLODetector.track(frame)` без отдельного motion gate;
 - endpoint `/api/events/stream` реализован как короткий SSE stream, а клиентская часть переподключается повторно.
 
 ---
 
 ## Статус проекта
 
-Текущая версия — **web-only ANPR system**.
-
-Desktop UI больше не является основным способом работы; основной интерфейс — операторская web-панель.
+Текущая версия — **web-only ANPR system с Docker-only deployment model**.
 
 ---
 

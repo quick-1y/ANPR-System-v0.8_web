@@ -612,7 +612,7 @@ class SettingsManager:
                 self._save(settings_snapshot)
             storage = copy.deepcopy(self.settings.get("storage", {}))
 
-        env_postgres_dsn = os.getenv("POSTGRES_DSN", "postgresql://anpr:anpr@127.0.0.1:5432/anpr").strip()
+        env_postgres_dsn = os.getenv("POSTGRES_DSN", "postgresql://anpr:anpr@postgres:5432/anpr").strip()
         storage["postgres_dsn"] = env_postgres_dsn
         return storage
 

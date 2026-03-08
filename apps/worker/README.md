@@ -1,12 +1,15 @@
 # Retention Worker Service
 
-Отдельный сервис для production-режима, выполняющий циклы retention/rotation вне API-процесса.
+Retention worker запускается только внутри Docker Compose как сервис `retention_worker`.
 
 ## Запуск
+
 ```bash
-uvicorn apps.worker.main:app --host 0.0.0.0 --port 8092
+docker compose up -d --build retention_worker
 ```
 
 ## Endpoints
-- `GET /worker/health`
+
+- Внутри docker-сети: `http://retention_worker:8092/worker/health`
+- Через nginx на хосте: `http://localhost:${HTTP_PORT:-8080}/worker/health`
 - `POST /worker/retention/run`
