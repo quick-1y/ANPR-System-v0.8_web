@@ -140,7 +140,7 @@ class ReconnectPayload(BaseModel):
 
 
 class StoragePayload(BaseModel):
-    postgres_dsn: str
+    postgres_dsn: Optional[str] = None
     screenshots_dir: str
     logs_dir: str
     auto_cleanup_enabled: bool

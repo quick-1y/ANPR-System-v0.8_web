@@ -5,11 +5,17 @@ services:
     working_dir: /app
     volumes:
       - ./:/app
+    env_file:
+      - .env
     environment:
-      POSTGRES_DSN: "postgresql://anpr:anpr@postgres:5432/anpr"
-    command: bash -lc "pip install -r requirements.txt && uvicorn apps.api.main:app --host 0.0.0.0 --port 8080"
+      POSTGRES_DSN: ${POSTGRES_DSN}
+      SETTINGS_PATH: ${SETTINGS_PATH:-settings.yaml}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      APP_ENV: ${APP_ENV:-development}
+      DEBUG: ${DEBUG:-false}
+    command: bash -lc "pip install -r requirements.txt && uvicorn apps.api.main:app --host 0.0.0.0 --port ${API_PORT:-8080}"
     ports:
-      - "8080:8080"
+      - "${API_PORT:-8080}:${API_PORT:-8080}"
     depends_on:
       postgres:
         condition: service_healthy
@@ -19,11 +25,17 @@ services:
     working_dir: /app
     volumes:
       - ./:/app
+    env_file:
+      - .env
     environment:
-      POSTGRES_DSN: "postgresql://anpr:anpr@postgres:5432/anpr"
-    command: bash -lc "pip install -r requirements.txt && uvicorn apps.worker.main:app --host 0.0.0.0 --port 8092"
+      POSTGRES_DSN: ${POSTGRES_DSN}
+      SETTINGS_PATH: ${SETTINGS_PATH:-settings.yaml}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      APP_ENV: ${APP_ENV:-development}
+      DEBUG: ${DEBUG:-false}
+    command: bash -lc "pip install -r requirements.txt && uvicorn apps.worker.main:app --host 0.0.0.0 --port ${WORKER_PORT:-8092}"
     ports:
-      - "8092:8092"
+      - "${WORKER_PORT:-8092}:${WORKER_PORT:-8092}"
     depends_on:
       postgres:
         condition: service_healthy
@@ -31,16 +43,16 @@ services:
   postgres:
     image: postgres:16
     environment:
-      POSTGRES_DB: anpr
-      POSTGRES_USER: anpr
-      POSTGRES_PASSWORD: anpr
+      POSTGRES_DB: ${POSTGRES_DB:-anpr}
+      POSTGRES_USER: ${POSTGRES_USER:-anpr}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-anpr}
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./database/postgres/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U anpr -d anpr"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-anpr} -d ${POSTGRES_DB:-anpr}"]
       interval: 5s
       timeout: 5s
       retries: 10

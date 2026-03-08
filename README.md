@@ -266,7 +266,7 @@ flowchart TD
 
 ### 1. Подключение канала
 
-При старте API читает список каналов из `settings.json`.  
+При старте API читает список каналов из `settings.yaml`.  
 Для каждого канала `ChannelProcessor` создаёт `ChannelContext`.  
 Если канал `enabled=true`, для него сразу запускается отдельный thread.
 
@@ -474,7 +474,10 @@ ANPR-System-v0.8_web/
 ├── data/
 ├── logs/
 ├── requirements.txt
-└── settings.json
+├── .env
+├── .env.example
+├── settings.yaml
+└── settings.example.yaml
 ```
 
 ---
@@ -512,20 +515,34 @@ pip install -r requirements.txt --extra-index-url https://pypi.org/simple
 
 ---
 
+
+## Схема конфигурации
+
+- `.env` — переменные окружения, секреты и deploy/runtime-параметры (DSN, порты, `LOG_LEVEL`, `APP_ENV`, `DEBUG`, `SETTINGS_PATH`).
+- `settings.yaml` — прикладной runtime-конфиг системы (каналы, ROI, thresholds, контроллеры, правила обработки).
+- PostgreSQL — runtime-данные (события, списки и записи).
+
 ## Локальный запуск
 
-Откройте два отдельных терминала.
+1) Скопируйте примеры конфигурации и заполните их под своё окружение:
+
+```bash
+cp .env.example .env
+cp settings.example.yaml settings.yaml
+```
+
+2) Запустите сервисы в двух терминалах (или через process manager), передав `--env-file .env` для uvicorn:
 
 ### 1. API + Web UI
 
 ```bash
-python -m uvicorn apps.api.main:app --host 0.0.0.0 --port 8080
+python -m uvicorn apps.api.main:app --host 0.0.0.0 --port 8080 --env-file .env
 ```
 
 ### 2. Retention worker
 
 ```bash
-python -m uvicorn apps.worker.main:app --host 0.0.0.0 --port 8092
+python -m uvicorn apps.worker.main:app --host 0.0.0.0 --port 8092 --env-file .env
 ```
 
 ### Точки доступа
@@ -550,10 +567,8 @@ docker compose up --build
 
 Инициализация PostgreSQL выполняется через `database/postgres/schema.sql`.
 
-Compose передаёт `POSTGRES_DSN=postgresql://anpr:anpr@postgres:5432/anpr` и публикует порты:
-- `8080` — API / Web UI
-- `8092` — worker
-- `5432` — PostgreSQL
+Compose загружает переменные из `.env` и передаёт их сервисам.
+Ключевые переменные: `POSTGRES_DSN`, `SETTINGS_PATH`, `API_PORT`, `WORKER_PORT`, `POSTGRES_*`.
 
 ---
 
@@ -561,7 +576,7 @@ Compose передаёт `POSTGRES_DSN=postgresql://anpr:anpr@postgres:5432/anpr
 
 ### PostgreSQL (обязательно)
 
-События и списки номеров хранятся только в PostgreSQL через `storage.postgres_dsn` / `POSTGRES_DSN`.
+События и списки номеров хранятся только в PostgreSQL через `POSTGRES_DSN` из `.env`.
 
 Если PostgreSQL временно недоступен, сервисы продолжают работать, а DB-зависимые endpoints возвращают controlled degradation (HTTP 503 или `status=error` для retention run).
 
