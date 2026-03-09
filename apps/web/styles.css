@@ -361,7 +361,7 @@ body {
   display: flex;
   gap: 6px;
 }
-.ev-meta span {
+.ev-meta span:not(.badge) {
   color: var(--text2);
 }
 .ev-conf {

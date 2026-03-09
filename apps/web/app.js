@@ -187,7 +187,7 @@ function renderEventFeed() {
     const direction = formatDirection(item.direction);
     const div = document.createElement("div");
     div.className = `ev-item ${i === 0 ? "hot" : ""}`;
-    div.innerHTML = `${flagHtml(item.country)}<div class='ev-body'><div class='ev-plate'>${item.plate || "—"}</div><div class='ev-meta'>${item.channel || `CAM-${item.channel_id || ""}`} · <span>${new Date(item.timestamp || Date.now()).toLocaleTimeString()}</span> · ${direction.label}</div></div><div class='ev-conf ${conf < 0.85 ? "warn" : ""}'>${conf.toFixed(2)}</div>`;
+    div.innerHTML = `${flagHtml(item.country)}<div class='ev-body'><div class='ev-plate'>${item.plate || "—"}</div><div class='ev-meta'>${item.channel || `CAM-${item.channel_id || ""}`} · <span>${new Date(item.timestamp || Date.now()).toLocaleTimeString()}</span> · <span class='badge ${direction.badgeClass}'>${direction.label}</span></div></div><div class='ev-conf ${conf < 0.85 ? "warn" : ""}'>${conf.toFixed(2)}</div>`;
     div.onclick = () => highlightPlate(item);
     feed.appendChild(div);
 
@@ -256,11 +256,36 @@ function renderJournal() {
 }
 
 function formatDirection(directionValue) {
-  const isIn = (directionValue || "in") === "in";
+  const normalized = String(directionValue || "").toUpperCase();
+  const isApproaching =
+    normalized === "IN" ||
+    normalized === "APPROACHING" ||
+    normalized === "APPROACH";
+  const isReceding =
+    normalized === "OUT" ||
+    normalized === "RECEDING" ||
+    normalized === "RECEDE";
+
+  if (isApproaching) {
+    return {
+      badgeClass: "badge-in",
+      label: "→ Приближение",
+      plain: "Приближение",
+    };
+  }
+
+  if (isReceding) {
+    return {
+      badgeClass: "badge-out",
+      label: "← Отдаление",
+      plain: "Отдаление",
+    };
+  }
+
   return {
-    badgeClass: isIn ? "badge-in" : "badge-out",
-    label: isIn ? "→ Приближение" : "← Отдаление",
-    plain: isIn ? "Приближение" : "Отдаление",
+    badgeClass: "badge-out",
+    label: "—",
+    plain: "—",
   };
 }
 
