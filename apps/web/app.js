@@ -65,6 +65,17 @@ function switchChannelSettingsTab(name) {
   }
 }
 
+
+async function refreshSystemResources() {
+  try {
+    const resources = await jfetch(api("/api/system/resources"));
+    document.getElementById("cpuStat").textContent =
+      `${Math.round(Number(resources.cpu_percent) || 0)}%`;
+    document.getElementById("ramStat").textContent =
+      `${Math.round(Number(resources.ram_percent) || 0)}%`;
+  } catch (_e) {}
+}
+
 async function refreshChannels() {
   state.channels = await jfetch(api("/api/channels"));
   renderVideoGrid();
@@ -942,12 +953,8 @@ document.getElementById("roiClearBtn").onclick = () => {
 document.getElementById("roiApplyBtn").onclick = () =>
   setVal("c_roi_points", JSON.stringify(roiPoints));
 
-setInterval(() => {
-  document.getElementById("cpuStat").textContent =
-    `${Math.round(8 + Math.random() * 12)}%`;
-  document.getElementById("ramStat").textContent =
-    `${Math.round(35 + Math.random() * 8)}%`;
-}, 2000);
+refreshSystemResources();
+setInterval(refreshSystemResources, 2000);
 window.addEventListener("beforeunload", () => {
   if (eventSource) {
     try {

@@ -6,6 +6,7 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+import psutil
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response, StreamingResponse
@@ -308,6 +309,15 @@ def health() -> Dict[str, Any]:
 @app.get("/api/storage/status")
 def storage_status() -> Dict[str, Any]:
     return _db_status()
+
+
+@app.get("/api/system/resources")
+def system_resources() -> Dict[str, float]:
+    vm = psutil.virtual_memory()
+    return {
+        "cpu_percent": float(psutil.cpu_percent(interval=None)),
+        "ram_percent": float(vm.percent),
+    }
 
 
 @app.get("/api/channels")
