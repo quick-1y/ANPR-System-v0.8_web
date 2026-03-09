@@ -11,6 +11,8 @@ from typing import Any, Dict, List, Optional
 from anpr.infrastructure.logging_manager import get_logger
 
 from anpr.infrastructure.settings_migrations import run_settings_migrations
+from anpr.infrastructure.config_factory import build_anpr_config, build_app_config
+from packages.anpr_core.config import ANPRConfig, AppConfig
 from anpr.infrastructure.settings_schema import (
     SETTINGS_VERSION,
     DEFAULT_ROI_POINTS,
@@ -790,6 +792,16 @@ class SettingsManager:
 
     def get_direction_defaults(self) -> Dict[str, float | int]:
         return direction_defaults()
+
+    def get_anpr_config(self) -> ANPRConfig:
+        with self._file_lock:
+            snapshot = copy.deepcopy(self.settings)
+        return build_anpr_config(snapshot)
+
+    def get_app_config(self) -> AppConfig:
+        with self._file_lock:
+            snapshot = copy.deepcopy(self.settings)
+        return build_app_config(snapshot)
 
     def refresh(self) -> None:
         with self._file_lock:

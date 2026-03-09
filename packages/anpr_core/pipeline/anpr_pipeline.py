@@ -9,10 +9,10 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional, Protocol
 
 import numpy as np
 
-from anpr.postprocessing.validator import PlatePostProcessor
-from anpr.preprocessing.plate_preprocessor import PlatePreprocessor
+from packages.anpr_core.postprocessing.validator import PlatePostProcessor
+from packages.anpr_core.preprocessing.plate_preprocessor import PlatePreprocessor
 if TYPE_CHECKING:
-    from anpr.recognition.crnn_recognizer import CRNNRecognizer
+    from packages.anpr_core.recognition.crnn_recognizer import CRNNRecognizer
 
 
 class BatchRecognizer(Protocol):

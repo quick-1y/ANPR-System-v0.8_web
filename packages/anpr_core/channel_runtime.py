@@ -6,10 +6,11 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
-from anpr.infrastructure.logging_manager import get_logger
-from packages.anpr_core.event_sink import EventSink
+import logging
+from packages.anpr_core.config import ANPRConfig
+from packages.anpr_core.ports import EventSinkPort
 
-logger = get_logger(__name__)
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -41,13 +42,12 @@ class ChannelContext:
 
 
 class ChannelProcessor:
-    def __init__(self, event_callback, plate_settings: Dict[str, Any] | None = None, storage_settings: Dict[str, Any] | None = None) -> None:
+    def __init__(self, event_callback, anpr_config: ANPRConfig, sink: EventSinkPort) -> None:
         self._event_callback = event_callback
         self._contexts: Dict[int, ChannelContext] = {}
         self._lock = threading.RLock()
-        storage = storage_settings or {}
-        self._sink = EventSink(postgres_dsn=str(storage.get("postgres_dsn", "")))
-        self._plate_settings = plate_settings or {}
+        self._sink = sink
+        self._anpr_config = anpr_config
 
     def list_states(self) -> Dict[int, ChannelMetrics]:
         with self._lock:
@@ -112,14 +112,14 @@ class ChannelProcessor:
 
         cap = None
         try:
-            from anpr.pipeline.factory import build_components
-            from anpr.detection.motion_detector import MotionDetector, MotionDetectorConfig
+            from packages.anpr_core.pipeline.factory import build_components
+            from packages.anpr_core.detection.motion_detector import MotionDetector, MotionDetectorConfig
 
             pipeline, detector = build_components(
                 best_shots=int(channel.get("best_shots", 3)),
                 cooldown_seconds=int(channel.get("cooldown_seconds", 5)),
                 min_confidence=float(channel.get("ocr_min_confidence", 0.6)),
-                plate_config=self._plate_settings,
+                anpr_config=self._anpr_config,
                 direction_config=channel.get("direction", {}),
                 min_plate_size=channel.get("min_plate_size"),
                 max_plate_size=channel.get("max_plate_size"),

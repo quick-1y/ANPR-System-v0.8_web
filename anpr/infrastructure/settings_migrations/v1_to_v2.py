@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from typing import Any, Dict
 
-from anpr.infrastructure.settings_schema import SETTINGS_VERSION, direction_defaults, normalize_region_config
+from anpr.infrastructure.settings_schema import direction_defaults, normalize_region_config
 
 
-TARGET_VERSION = SETTINGS_VERSION
+TARGET_VERSION = 2
 
 
 def migrate(data: Dict[str, Any]) -> Dict[str, Any]:

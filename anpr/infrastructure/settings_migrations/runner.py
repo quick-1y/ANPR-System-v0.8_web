@@ -6,12 +6,14 @@ import copy
 from typing import Any, Callable, Dict, Tuple
 
 from anpr.infrastructure.settings_migrations.v1_to_v2 import migrate as migrate_v1_to_v2
+from anpr.infrastructure.settings_migrations.v2_to_v3 import migrate as migrate_v2_to_v3
 from anpr.infrastructure.settings_schema import SETTINGS_VERSION
 
 MigrationFn = Callable[[Dict[str, Any]], Dict[str, Any]]
 
 MIGRATIONS: dict[int, MigrationFn] = {
     1: migrate_v1_to_v2,
+    2: migrate_v2_to_v3,
 }
 
 

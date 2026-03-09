@@ -19,7 +19,7 @@ from anpr.infrastructure.logging_manager import get_logger
 from anpr.infrastructure.settings_manager import SettingsManager
 from anpr.infrastructure.storage import PostgresEventDatabase, StorageUnavailableError
 from apps.api.data_lifecycle import DataLifecycleService, RetentionPolicy
-from packages.anpr_core.channel_runtime import ChannelProcessor
+from apps.anpr_service.service import ANPRService
 from packages.anpr_core.event_bus import EventBus
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -202,12 +202,8 @@ MAIN_LOOP: asyncio.AbstractEventLoop | None = None
 STREAM_SHUTDOWN = asyncio.Event()
 
 
-def _create_processor() -> ChannelProcessor:
-    return ChannelProcessor(
-        event_callback=_publish_event_sync,
-        plate_settings=settings.get_plate_settings(),
-        storage_settings=settings.get_storage_settings(),
-    )
+def _create_service() -> ANPRService:
+    return ANPRService(settings=settings, event_callback=_publish_event_sync)
 
 
 def _build_lifecycle() -> DataLifecycleService:
@@ -239,19 +235,17 @@ def _publish_event_sync(event: Dict[str, Any]) -> None:
 
 
 def _restart_processor_for_settings() -> None:
-    global processor
+    global processor, anpr_service
     channels = settings.get_channels()
-    enabled_ids = [int(item["id"]) for item in channels if item.get("enabled", True)]
     for channel in channels:
         try:
             processor.stop(int(channel["id"]))
         except Exception:
             pass
-    processor = _create_processor()
-    for channel in channels:
-        processor.ensure_channel(channel)
-    for channel_id in enabled_ids:
-        processor.start(channel_id)
+    anpr_service = _create_service()
+    processor = anpr_service.processor
+    anpr_service.sync_channels()
+    anpr_service.start_enabled_channels()
 
 
 def _restart_channel_if_running(channel_id: int) -> None:
@@ -260,7 +254,8 @@ def _restart_channel_if_running(channel_id: int) -> None:
         processor.restart(channel_id)
 
 
-processor = _create_processor()
+anpr_service = _create_service()
+processor = anpr_service.processor
 lifecycle = _build_lifecycle()
 
 app = FastAPI(title="ANPR Core API", version="0.8-stage8")
@@ -278,10 +273,8 @@ async def bootstrap_channels() -> None:
     global MAIN_LOOP
     MAIN_LOOP = asyncio.get_running_loop()
     STREAM_SHUTDOWN.clear()
-    for channel in settings.get_channels():
-        processor.ensure_channel(channel)
-        if channel.get("enabled", True):
-            processor.start(int(channel["id"]))
+    anpr_service.sync_channels()
+    anpr_service.start_enabled_channels()
 
 
 @app.on_event("shutdown")

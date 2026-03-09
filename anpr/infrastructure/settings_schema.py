@@ -6,7 +6,7 @@ import os
 from datetime import datetime, timedelta
 from typing import Any, Dict, Optional
 
-SETTINGS_VERSION = 2
+SETTINGS_VERSION = 3
 
 DEFAULT_ROI_POINTS = [
     {"x": 500, "y": 300},
@@ -74,11 +74,11 @@ def storage_defaults() -> Dict[str, Any]:
 
 
 def plate_defaults() -> Dict[str, Any]:
-    return {"config_dir": "anpr/countries", "enabled_countries": ["RU", "UA", "BY", "KZ"]}
+    return {"config_dir": "", "enabled_countries": ["RU", "UA", "BY", "KZ"]}
 
 
 def model_defaults() -> Dict[str, Any]:
-    return {"yolo_model_path": "anpr/models/yolo/best.pt", "ocr_model_path": "anpr/models/ocr_crnn/crnn_ocr_model_int8_fx.pth", "device": "cpu"}
+    return {"yolo_model_path": "", "ocr_model_path": "", "device": "cpu"}
 
 
 def inference_defaults() -> Dict[str, Any]:

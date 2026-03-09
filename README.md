@@ -59,6 +59,45 @@ Web-first система автоматического распознавани
 
 ---
 
+
+## Нормализация ANPR-ядра (v0.8)
+
+В проекте выделены два слоя:
+
+- `packages/anpr_core` — библиотечное ANPR-ядро (pipeline, detection, preprocessing, recognition, postprocessing, channel runtime, ресурсы и ANPR-конфиг).
+- `apps/anpr_service` — service-layer для запуска ядра и подключения инфраструктурных адаптеров (`service.py`), а `main.py` оставлен тонким entrypoint.
+
+Что это даёт:
+
+- API/Web слой не зависит от внутренних модулей распознавания напрямую;
+- ресурсы ANPR (country templates и модели) лежат рядом с `anpr_core`;
+- пути к ресурсам резолвятся через пакет `anpr_core`, без хрупкой привязки к `cwd`;
+- конфигурация разделена концептуально на `AppConfig` (web/api/infra) и `ANPRConfig` (detector/ocr/plate rules/runtime).
+
+Это подготовительный этап к будущему выносу `apps/anpr_service` в отдельный контейнер/процесс без изменения бизнес-логики распознавания.
+
+### Актуальная структура (relevant)
+
+```text
+apps/
+  api/
+  anpr_service/
+    main.py
+packages/
+  anpr_core/
+    config.py
+    channel_runtime.py
+    ports.py
+    pipeline/
+    detection/
+    preprocessing/
+    recognition/
+    postprocessing/
+    resources/
+      countries/
+      models/
+```
+
 ## Быстрый старт
 
 Поддерживаемая модель runtime: Docker Compose.
@@ -67,7 +106,7 @@ Web-first система автоматического распознавани
 
 - Docker Engine 24+
 - Docker Compose v2+
-- Файлы моделей в `anpr/models/`
+- Файлы моделей в `packages/anpr_core/resources/models/`
 
 ### Подготовка конфигурации
 
@@ -148,6 +187,7 @@ docker compose down -v
 - `.env` — единственный слой переменных окружения для контейнеров (`POSTGRES_*`, `POSTGRES_DSN`, `HTTP_PORT`, `LOG_LEVEL`, `SETTINGS_PATH`) и лежит в корне проекта.
 - `.env.example` — шаблон для Docker Compose, лежит в корне проекта и не используется как runtime-файл.
 - `config/settings.yaml` — единственный рабочий settings-файл ANPR runtime (каналы, ROI, OCR/детекция, retention, контроллеры).
+- ANPR resource paths (`plates.config_dir`, `models.yolo_model_path`, `models.ocr_model_path`) можно явно переопределять, но по умолчанию они могут быть пустыми — тогда `anpr_core` сам резолвит package resources.
 - `settings.example.yaml` и root `settings.yaml` не используются.
 - `api` и `retention_worker` используют один и тот же путь `SETTINGS_PATH=/app/config/settings.yaml`.
 - PostgreSQL — единственный backend runtime-данных (события, списки, записи).
@@ -407,7 +447,7 @@ flowchart TD
 - `source`
 - `direction`
 
-Событие записывается в storage через `EventSink`.
+Событие записывается в storage через sink-адаптер service-слоя (`apps/anpr_service`), а core работает через порт `EventSinkPort`.
 
 ### 6. Публикация события в UI
 
@@ -428,16 +468,16 @@ UI параллельно:
 - `apps/api/data_lifecycle.py` — retention, cleanup, export;
 - `packages/anpr_core/channel_runtime.py` — runtime каналов;
 - `packages/anpr_core/event_bus.py` — in-memory pub/sub для live событий;
-- `packages/anpr_core/event_sink.py` — запись событий в PostgreSQL.
+- `apps/anpr_service/service.py` — сборка ANPR runtime, sink-адаптеров и lifecycle операций.
 
 ### ANPR
 
-- `anpr/detection/yolo_detector.py` — детектор номерных рамок и tracking fallback logic;
-- `anpr/pipeline/anpr_pipeline.py` — OCR pipeline, aggregator, direction estimator, cooldown;
-- `anpr/preprocessing/plate_preprocessor.py` — коррекция перспективы / наклона;
-- `anpr/recognition/crnn_recognizer.py` — OCR CRNN;
-- `anpr/postprocessing/validator.py` — валидация по конфигам стран;
-- `anpr/detection/motion_detector.py` — модуль motion detection, пока не включён в основной runtime path.
+- `packages/anpr_core/detection/yolo_detector.py` — детектор номерных рамок и tracking fallback logic;
+- `packages/anpr_core/pipeline/anpr_pipeline.py` — OCR pipeline, aggregator, direction estimator, cooldown;
+- `packages/anpr_core/preprocessing/plate_preprocessor.py` — коррекция перспективы / наклона;
+- `packages/anpr_core/recognition/crnn_recognizer.py` — OCR CRNN;
+- `packages/anpr_core/postprocessing/validator.py` — валидация по конфигам стран;
+- `packages/anpr_core/detection/motion_detector.py` — модуль motion detection для режима детекции по движению.
 
 ### Web UI
 
@@ -545,19 +585,13 @@ ANPR-System-v0.8_web/
 ├── apps/
 │   ├── api/                 # backend API, preview, export, settings
 │   ├── worker/              # retention worker
+│   ├── anpr_service/        # service/bootstrap слой для запуска ANPR runtime
 │   ├── web/                 # web UI (включая статические флаги: web/images/flags)
 │   └── video_gateway/       # legacy / optional
 ├── packages/
-│   └── anpr_core/           # channel runtime, event bus, sink
+│   └── anpr_core/           # библиотечное ANPR-ядро: runtime, pipeline, detection, OCR, resources
 ├── anpr/
-│   ├── detection/
-│   ├── pipeline/
-│   ├── preprocessing/
-│   ├── recognition/
-│   ├── postprocessing/
-│   ├── infrastructure/
-│   ├── models/
-│   └── countries/
+│   └── infrastructure/      # app/storage/settings/controllers инфраструктура
 ├── database/
 │   ├── postgres/           # SQL-схема и init-артефакты PostgreSQL
 │   └── README.md

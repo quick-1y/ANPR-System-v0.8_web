@@ -9,9 +9,9 @@ import numpy as np
 import torch
 from ultralytics import YOLO
 
-from anpr.infrastructure.logging_manager import get_logger
+import logging
 
-logger = get_logger(__name__)
+logger = logging.getLogger(__name__)
 
 
 class YOLODetector:
