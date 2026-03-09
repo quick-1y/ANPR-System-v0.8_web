@@ -22,7 +22,7 @@ services:
     env_file:
       - .env
     environment:
-      SETTINGS_PATH: ${SETTINGS_PATH:-settings.yaml}
+      SETTINGS_PATH: ${SETTINGS_PATH:-/app/config/settings.yaml}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       APP_ENV: ${APP_ENV:-docker}
       DEBUG: ${DEBUG:-false}
@@ -30,7 +30,7 @@ services:
     expose:
       - "8080"
     volumes:
-      - ./settings.yaml:/app/settings.yaml
+      - ./config:/app/config
       - media_data:/app/data
       - logs_data:/app/logs
     depends_on:
@@ -50,7 +50,7 @@ services:
     env_file:
       - .env
     environment:
-      SETTINGS_PATH: ${SETTINGS_PATH:-settings.yaml}
+      SETTINGS_PATH: ${SETTINGS_PATH:-/app/config/settings.yaml}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       APP_ENV: ${APP_ENV:-docker}
       DEBUG: ${DEBUG:-false}
@@ -58,7 +58,7 @@ services:
     expose:
       - "8092"
     volumes:
-      - ./settings.yaml:/app/settings.yaml
+      - ./config:/app/config
       - media_data:/app/data
       - logs_data:/app/logs
     depends_on:

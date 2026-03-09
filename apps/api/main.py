@@ -444,8 +444,18 @@ def create_channel(payload: ChannelPayload) -> Dict[str, Any]:
     }
     channels.append(channel)
     settings.save_channels(channels)
-    processor.ensure_channel(channel)
-    return channel
+
+    saved_channel = next(
+        (item for item in settings.get_channels() if int(item.get("id", 0)) == next_id),
+        None,
+    )
+    if saved_channel is None:
+        raise HTTPException(status_code=500, detail="Не удалось сохранить канал")
+
+    processor.ensure_channel(saved_channel)
+    if saved_channel.get("enabled", True):
+        processor.start(next_id)
+    return saved_channel
 
 
 @app.put("/api/channels/{channel_id}")

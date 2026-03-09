@@ -73,7 +73,7 @@ Web-first система автоматического распознавани
 
 ```bash
 cp .env.example .env
-cp settings.example.yaml settings.yaml
+mkdir -p config
 ```
 
 ### Рекомендуемый запуск
@@ -145,9 +145,18 @@ docker compose down -v
 
 ## Схема конфигурации
 
-- `.env` — единственный слой переменных окружения для контейнеров (`POSTGRES_*`, `POSTGRES_DSN`, `HTTP_PORT`, `LOG_LEVEL`, `SETTINGS_PATH`).
-- `settings.yaml` — прикладные настройки ANPR runtime (каналы, ROI, OCR/детекция, retention, контроллеры).
+- `.env` — единственный слой переменных окружения для контейнеров (`POSTGRES_*`, `POSTGRES_DSN`, `HTTP_PORT`, `LOG_LEVEL`, `SETTINGS_PATH`) и лежит в корне проекта.
+- `.env.example` — шаблон для Docker Compose, лежит в корне проекта и не используется как runtime-файл.
+- `config/settings.yaml` — единственный рабочий settings-файл ANPR runtime (каналы, ROI, OCR/детекция, retention, контроллеры).
+- `settings.example.yaml` и root `settings.yaml` не используются.
+- `api` и `retention_worker` используют один и тот же путь `SETTINGS_PATH=/app/config/settings.yaml`.
 - PostgreSQL — единственный backend runtime-данных (события, списки, записи).
+
+Перед запуском нужно подготовить:
+- `.env` (из `.env.example`);
+- `config/settings.yaml` (рабочий конфиг приложения).
+
+Бэкап/перенос конфигурации выполняется копированием `config/settings.yaml` и `.env`.
 
 Важно: значения по умолчанию в конфигурации ориентированы на docker-сеть (`postgres` как hostname БД).
 
@@ -346,7 +355,7 @@ flowchart TD
 
 ### 1. Подключение канала
 
-При старте API читает список каналов из `settings.yaml`.  
+При старте API читает список каналов из `config/settings.yaml`.  
 Для каждого канала `ChannelProcessor` создаёт `ChannelContext`.  
 Если канал `enabled=true`, для него сразу запускается отдельный thread.
 
@@ -560,8 +569,8 @@ ANPR-System-v0.8_web/
 ├── requirements.txt
 ├── .env
 ├── .env.example
-├── settings.yaml
-└── settings.example.yaml
+├── config/
+│   └── settings.yaml
 ```
 
 ---

@@ -46,7 +46,7 @@ class SettingsManager:
     _file_lock = threading.RLock()
 
     def __init__(self, path: str | None = None) -> None:
-        self.path = path or os.getenv("SETTINGS_PATH", "settings.yaml")
+        self.path = path or os.getenv("SETTINGS_PATH", "config/settings.yaml")
         self._settings_lock = threading.RLock()
         self.settings = self._load()
 
