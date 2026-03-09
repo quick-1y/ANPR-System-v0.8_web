@@ -1,6 +1,5 @@
 const state = {
   channels: [],
-  events: [],
   lists: [],
   selectedListId: null,
   allEvents: [],
@@ -178,39 +177,34 @@ function renderVideoGrid() {
   }
 }
 
-function getEventFeedVisibleLimit() {
-  const feed = document.getElementById("eventFeed");
-  if (!feed) return 1;
-  const gap = 5;
-  const sample = feed.querySelector(".ev-item");
-  const estimatedItemHeight = sample
-    ? sample.getBoundingClientRect().height
-    : 52;
-  const maxByHeight = Math.floor(
-    (feed.clientHeight + gap) / (estimatedItemHeight + gap),
-  );
-  return Math.max(1, maxByHeight || 1);
-}
-
 function renderEventFeed() {
   const feed = document.getElementById("eventFeed");
   if (!feed) return;
-  const visibleLimit = getEventFeedVisibleLimit();
   feed.innerHTML = "";
-  state.events.slice(0, visibleLimit).forEach((item, i) => {
+  const events = state.allEvents;
+  for (const [i, item] of events.entries()) {
     const conf = Number(item.confidence || 0);
     const div = document.createElement("div");
     div.className = `ev-item ${i === 0 ? "hot" : ""}`;
     div.innerHTML = `${flagHtml(item.country)}<div class='ev-body'><div class='ev-plate'>${item.plate || "—"}</div><div class='ev-meta'>${item.channel || `CAM-${item.channel_id || ""}`} · <span>${new Date(item.timestamp || Date.now()).toLocaleTimeString()}</span></div></div><div class='ev-conf ${conf < 0.85 ? "warn" : ""}'>${conf.toFixed(2)}</div>`;
     div.onclick = () => highlightPlate(item);
     feed.appendChild(div);
-  });
+
+    if (feed.scrollHeight > feed.clientHeight) {
+      feed.removeChild(div);
+      if (feed.children.length === 0) {
+        feed.appendChild(div);
+      }
+      break;
+    }
+  }
 }
 
 function pushEvent(ev) {
-  state.events.unshift(ev);
-  if (state.events.length > 200) state.events.pop();
+  state.allEvents.unshift(ev);
+  if (state.allEvents.length > 500) state.allEvents.pop();
   renderEventFeed();
+  renderJournal();
   addDebug(
     `[INFO] event: ${ev.plate || "-"} conf=${Number(ev.confidence || 0).toFixed(2)}`,
     "ok",
@@ -232,6 +226,7 @@ function highlightPlate(ev) {
 
 async function loadJournal() {
   state.allEvents = await jfetch(api("/api/events?limit=500"));
+  renderEventFeed();
   renderJournal();
 }
 function renderJournal() {
