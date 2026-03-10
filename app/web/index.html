@@ -676,41 +676,13 @@
             </div>
           </div>
           <div class="settings-pane" id="sp-controllers">
-            <div style="display: flex; gap: 12px; min-height: 520px">
-              <div
-                style="
-                  width: 210px;
-                  display: flex;
-                  flex-direction: column;
-                  gap: 8px;
-                "
-              >
-                <div style="display: flex; gap: 6px">
-                  <button
-                    class="btn btn-ghost"
-                    id="createControllerBtn"
-                    style="padding: 4px 10px"
-                  >
-                    +</button
-                  ><button
-                    class="btn btn-ghost"
-                    id="deleteControllerBtn"
-                    style="padding: 4px 10px"
-                  >
-                    -
-                  </button>
+            <div class="ch-layout">
+              <div class="ch-sidebar">
+                <div class="sidebar-toolbar compact-actions">
+                  <button class="icon-btn-sm" id="createControllerBtn">+</button
+                  ><button class="icon-btn-sm" id="deleteControllerBtn">-</button>
                 </div>
-                <div
-                  id="controllerItems"
-                  style="
-                    flex: 1;
-                    overflow: auto;
-                    border: 1px solid var(--border);
-                    border-radius: 10px;
-                    padding: 6px;
-                    background: var(--field);
-                  "
-                ></div>
+                <div class="ch-list" id="controllerItems"></div>
               </div>
               <div style="flex: 1" id="controllerConfigPane">
                 <div class="s-card">

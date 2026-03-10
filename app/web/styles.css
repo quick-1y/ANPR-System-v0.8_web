@@ -271,7 +271,13 @@ body {
 .s-input.sm { width: 104px; }
 .s-input.wide { width: 320px; max-width: 100%; }
 textarea.s-input { min-height: 76px; height: auto; padding: 8px; }
-.ch-layout { display: grid; grid-template-columns: 190px 1fr; gap: 10px; min-height: 620px; }
+.ch-layout {
+  display: grid;
+  grid-template-columns: 190px minmax(0, 1fr);
+  gap: 10px;
+  min-height: 620px;
+  align-items: stretch;
+}
 .ch-sidebar { display: flex; flex-direction: column; gap: 8px; }
 .ch-list, #controllerItems { background: var(--field); border: 1px solid var(--border); border-radius: 8px; overflow: auto; }
 .ch-item { min-height: 32px; padding: 0 10px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 7px; color: var(--text2); cursor: pointer; }
@@ -282,6 +288,13 @@ textarea.s-input { min-height: 76px; height: auto; padding: 8px; }
 #channelTabs { display: flex; gap: 6px !important; flex-wrap: wrap; margin-bottom: 8px !important; }
 .ch-tab { font-family: var(--mono); font-size: 11px; }
 .ch-tab.active { color: var(--accent2); border-color: rgba(232,168,56,0.44); background: rgba(232,168,56,0.12); }
+#channelConfigPane,
+#channelConfigEmpty,
+#controllerConfigPane,
+#controllerConfigEmpty {
+  grid-column: 2;
+  grid-row: 1;
+}
 .empty-pane {
   display: none;
   align-items: center;
