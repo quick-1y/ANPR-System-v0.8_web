@@ -312,9 +312,42 @@ class SettingsManager:
             if channel.get("controller_relay") != 0:
                 channel["controller_relay"] = 0
                 changed = True
-            if channel.get("controller_action") != "on":
-                channel["controller_action"] = "on"
-                changed = True
+
+        if "controller_action" in channel:
+            channel.pop("controller_action", None)
+            changed = True
+
+        try:
+            controller_relay = int(channel.get("controller_relay", 0) or 0)
+        except (TypeError, ValueError):
+            controller_relay = 0
+        if controller_relay not in (0, 1):
+            controller_relay = 0
+        if channel.get("controller_relay") != controller_relay:
+            channel["controller_relay"] = controller_relay
+            changed = True
+
+        mode = str(channel.get("list_filter_mode") or "all").strip().lower()
+        if mode not in {"all", "whitelist", "custom"}:
+            mode = "all"
+        if channel.get("list_filter_mode") != mode:
+            channel["list_filter_mode"] = mode
+            changed = True
+
+        raw_ids = channel.get("list_filter_list_ids")
+        if not isinstance(raw_ids, list):
+            raw_ids = []
+        normalized_ids = []
+        for item in raw_ids:
+            try:
+                value = int(item)
+            except (TypeError, ValueError):
+                continue
+            if value > 0 and value not in normalized_ids:
+                normalized_ids.append(value)
+        if channel.get("list_filter_list_ids") != normalized_ids:
+            channel["list_filter_list_ids"] = normalized_ids
+            changed = True
         return changed
 
     def _fill_reconnect_defaults(self, data: Dict[str, Any], defaults: Dict[str, Any]) -> bool:

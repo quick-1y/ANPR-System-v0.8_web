@@ -292,6 +292,7 @@ function formatDirection(directionValue) {
 async function loadLists() {
   state.lists = await jfetch(api("/api/lists"));
   renderLists();
+  renderCustomListOptions(currentChannelCustomListIds);
 }
 function renderLists() {
   const items = document.getElementById("listItems");
@@ -331,6 +332,7 @@ let channelConfigRequestToken = 0;
 let controllersCache = [];
 let selectedControllerId = null;
 let roiPoints = [];
+let currentChannelCustomListIds = [];
 const hotkeyMap = new Map();
 let roiDrag = -1;
 let roiBgImage = null;
@@ -605,13 +607,59 @@ function updateRelayTimerState(relayIndex) {
 function updateChannelControllerBindingState() {
   const hasController = Boolean(val("c_controller_id"));
   const relayEl = document.getElementById("c_controller_relay");
-  const actionEl = document.getElementById("c_controller_action");
   relayEl.disabled = !hasController;
-  actionEl.disabled = !hasController;
   if (!hasController) {
     setVal("c_controller_relay", 0);
-    setVal("c_controller_action", "on");
   }
+}
+
+function renderCustomListOptions(selectedIds = []) {
+  const box = document.getElementById("c_list_ids_select");
+  if (!box) return;
+  const selected = new Set((selectedIds || []).map((id) => Number(id)));
+  box.innerHTML = "";
+  const selectableLists = state.lists.filter((list) => String(list.type || "").toLowerCase() !== "black");
+  selectableLists.forEach((list) => {
+    const item = document.createElement("label");
+    item.style.display = "flex";
+    item.style.alignItems = "center";
+    item.style.gap = "6px";
+    item.style.marginBottom = "4px";
+
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.value = String(list.id);
+    checkbox.checked = selected.has(Number(list.id));
+
+    const caption = document.createElement("span");
+    const typeRaw = String(list.type || "").toLowerCase();
+    let listType = "Пользовательский список";
+    if (typeRaw === "white") listType = "Белый список";
+    else if (typeRaw === "black") listType = "Черный список";
+    caption.textContent = `${list.name} (${listType})`;
+
+    item.appendChild(checkbox);
+    item.appendChild(caption);
+    box.appendChild(item);
+  });
+}
+
+
+function getSelectedCustomListIds() {
+  const box = document.getElementById("c_list_ids_select");
+  if (!box) return [];
+  return Array.from(box.querySelectorAll("input[type='checkbox']:checked"))
+    .map((el) => Number(el.value))
+    .filter((id) => Number.isFinite(id) && id > 0);
+}
+
+function updateCustomListsVisibility() {
+  const block = document.getElementById("c_custom_lists_block");
+  const hint = document.getElementById("c_custom_lists_hint");
+  if (!block || !hint) return;
+  const isCustom = val("c_list_filter_mode") === "custom";
+  block.style.display = isCustom ? "flex" : "none";
+  hint.style.display = isCustom ? "flex" : "none";
 }
 
 function renderChannelControllerOptions(selectedId = "") {
@@ -690,16 +738,15 @@ async function selectChannel(id) {
   ) {
     return;
   }
-  setVal("c_id", c.id);
   setVal("c_name", c.name);
   setVal("c_source", c.source);
-  setChk("c_enabled", c.enabled);
   renderChannelControllerOptions(c.controller_id ?? "");
   setVal("c_controller_relay", c.controller_relay ?? 0);
-  setVal("c_controller_action", c.controller_action || "on");
   updateChannelControllerBindingState();
   setVal("c_list_filter_mode", c.list_filter_mode || "all");
-  setVal("c_list_ids", (c.list_filter_list_ids || []).join(","));
+  currentChannelCustomListIds = (c.list_filter_list_ids || []).map((id) => Number(id)).filter((id) => Number.isFinite(id) && id > 0);
+  renderCustomListOptions(currentChannelCustomListIds);
+  updateCustomListsVisibility();
   setVal("c_detection_mode", c.detection_mode || "motion");
   setVal("c_motion_threshold", c.motion_threshold ?? 0.01);
   setVal("c_motion_frame_stride", c.motion_frame_stride ?? 1);
@@ -736,15 +783,16 @@ async function saveChannel() {
     alert("Для замкнутой ROI-области нужно минимум 3 точки");
     return;
   }
+  const selectedCustomListIds = getSelectedCustomListIds();
+  currentChannelCustomListIds = selectedCustomListIds;
+
   const payload = {
     name: val("c_name"),
     source: val("c_source"),
-    enabled: document.getElementById("c_enabled").checked,
     controller_id: val("c_controller_id") ? Number(val("c_controller_id")) : null,
     controller_relay: val("c_controller_id") ? Number(val("c_controller_relay")) : 0,
-    controller_action: val("c_controller_id") ? val("c_controller_action") : "on",
     list_filter_mode: val("c_list_filter_mode"),
-    list_filter_list_ids: parseIds(val("c_list_ids")),
+    list_filter_list_ids: val("c_list_filter_mode") === "custom" ? selectedCustomListIds : [],
     detection_mode: val("c_detection_mode"),
     motion_threshold: Number(val("c_motion_threshold")),
     motion_frame_stride: Number(val("c_motion_frame_stride")),
@@ -1116,6 +1164,7 @@ document.getElementById("testRelay1Btn").onclick = () => testController(1);
 document.getElementById("ctrlR0Mode").onchange = () => updateRelayTimerState(0);
 document.getElementById("ctrlR1Mode").onchange = () => updateRelayTimerState(1);
 document.getElementById("c_controller_id").onchange = updateChannelControllerBindingState;
+document.getElementById("c_list_filter_mode").onchange = updateCustomListsVisibility;
 document.getElementById("saveDebugBtn").onclick = saveGeneral;
 document.getElementById("roiRefreshBtn").onclick = refreshROISnapshot;
 document.getElementById("roiRefreshBtnBottom").onclick = refreshROISnapshot;

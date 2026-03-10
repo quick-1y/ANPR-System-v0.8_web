@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import threading
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -48,10 +49,9 @@ class PlateSizePayload(BaseModel):
 class ChannelConfigPayload(BaseModel):
     name: str
     source: str
-    enabled: bool = True
+    enabled: Optional[bool] = None
     controller_id: Optional[int] = None
     controller_relay: int = Field(default=0, ge=0, le=1)
-    controller_action: str = Field(default="on", pattern="^(on|off|pulse)$")
     list_filter_mode: str = Field(default="all", pattern="^(all|whitelist|custom)$")
     list_filter_list_ids: List[int] = Field(default_factory=list)
     detection_mode: str = Field(default="motion", pattern="^(always|motion)$")
@@ -306,9 +306,105 @@ def _db_status() -> Dict[str, Any]:
     except StorageUnavailableError as exc:
         return {"status": "degraded", "backend": "postgresql", "detail": str(exc)}
 
+
+def _normalize_positive_int_ids(raw_ids: Any) -> List[int]:
+    if not isinstance(raw_ids, list):
+        return []
+    normalized_ids: List[int] = []
+    for item in raw_ids:
+        try:
+            value = int(item)
+        except (TypeError, ValueError):
+            continue
+        if value > 0 and value not in normalized_ids:
+            normalized_ids.append(value)
+    return normalized_ids
+
+
+def _resolve_channel_controller_action(channel: Dict[str, Any], plate: str) -> tuple[bool, str]:
+    mode = str(channel.get("list_filter_mode") or "all").strip().lower()
+    if lists_db.plate_in_list_type(plate, "black"):
+        return False, "blacklisted"
+    if mode == "all":
+        return True, "matched:all"
+    if mode == "whitelist":
+        if lists_db.plate_in_list_type(plate, "white"):
+            return True, "matched:whitelist"
+        return False, "whitelist miss"
+    if mode == "custom":
+        list_ids = _normalize_positive_int_ids(channel.get("list_filter_list_ids"))
+        if lists_db.plate_in_lists(plate, list_ids):
+            return True, "matched:custom"
+        return False, "custom miss"
+    return True, "matched:fallback"
+
+
+def _handle_channel_controller_event(event: Dict[str, Any]) -> None:
+    channel_id = int(event.get("channel_id") or 0)
+    plate = str(event.get("plate") or "").strip()
+    if channel_id <= 0 or not plate:
+        return
+
+    channel = next((item for item in settings.get_channels() if int(item.get("id", 0)) == channel_id), None)
+    if not channel:
+        logger.debug("channel %s relay skip: channel not found", channel_id)
+        return
+
+    controller_id = channel.get("controller_id")
+    if controller_id is None:
+        logger.debug("channel %s relay skip: no controller", channel_id)
+        return
+
+    allowed, reason = _resolve_channel_controller_action(channel, plate)
+    if not allowed:
+        logger.debug("channel %s relay skip: %s (plate=%s)", channel_id, reason, plate)
+        return
+
+    controller = next((item for item in settings.get_controllers() if int(item.get("id", 0)) == int(controller_id)), None)
+    if not controller:
+        logger.debug("channel %s relay skip: controller not found (controller_id=%s)", channel_id, controller_id)
+        return
+
+    relay_index = int(channel.get("controller_relay", 0) or 0)
+    url = controller_service.send_command(
+        controller,
+        relay_index,
+        True,
+        reason=f"anpr channel={channel_id} plate={plate} {reason}",
+    )
+    if not url:
+        logger.debug(
+            "channel %s relay skip: command failed / timeout (controller_id=%s relay=%s plate=%s)",
+            channel_id,
+            controller_id,
+            relay_index,
+            plate,
+        )
+        return
+    logger.debug(
+        "channel %s relay command sent: controller_id=%s relay=%s plate=%s reason=%s",
+        channel_id,
+        controller_id,
+        relay_index,
+        plate,
+        reason,
+    )
+
+
+def _dispatch_controller_event_async(event: Dict[str, Any]) -> None:
+    def _worker() -> None:
+        try:
+            _handle_channel_controller_event(event)
+        except Exception as exc:  # noqa: BLE001
+            logger.error("controller binding processing failed: %s", exc)
+
+    threading.Thread(target=_worker, name="channel-controller-dispatch", daemon=True).start()
+
+
 def _publish_event_sync(event: Dict[str, Any]) -> None:
     if MAIN_LOOP and MAIN_LOOP.is_running():
         MAIN_LOOP.call_soon_threadsafe(asyncio.create_task, event_bus.publish(event))
+    _dispatch_controller_event_async(event)
 
 
 def _restart_processor_for_settings() -> None:
@@ -353,7 +449,6 @@ def _validate_channel_controller_binding(payload: Dict[str, Any]) -> None:
     controller_id = payload.get("controller_id")
     if controller_id is None:
         payload["controller_relay"] = 0
-        payload["controller_action"] = "on"
         return
     if not _controller_exists(int(controller_id)):
         raise HTTPException(status_code=400, detail=f"Контроллер #{controller_id} не найден")
@@ -593,7 +688,7 @@ def get_channel_config(channel_id: int) -> Dict[str, Any]:
 
 @app.put("/api/channels/{channel_id}/config")
 def put_channel_config(channel_id: int, payload: ChannelConfigPayload) -> Dict[str, Any]:
-    data = payload.model_dump()
+    data = payload.model_dump(exclude_none=True)
     data["min_plate_size"] = payload.min_plate_size.model_dump()
     data["max_plate_size"] = payload.max_plate_size.model_dump()
     data["region"] = payload.region.model_dump()

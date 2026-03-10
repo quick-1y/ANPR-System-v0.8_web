@@ -404,12 +404,6 @@
                   <div class="s-card-body">
                     <div class="s-row">
                       <div class="s-row-label">
-                        <div class="s-row-name">ID</div>
-                      </div>
-                      <input class="s-input sm" id="c_id" readonly />
-                    </div>
-                    <div class="s-row">
-                      <div class="s-row-label">
                         <div class="s-row-name">Название</div>
                       </div>
                       <input class="s-input" id="c_name" />
@@ -419,12 +413,6 @@
                         <div class="s-row-name">Источник / RTSP</div>
                       </div>
                       <input class="s-input wide" id="c_source" />
-                    </div>
-                    <div class="s-row">
-                      <div class="s-row-label">
-                        <div class="s-row-name">Включен</div>
-                      </div>
-                      <input type="checkbox" id="c_enabled" />
                     </div>
                     <div class="s-row">
                       <div class="s-row-label">
@@ -443,16 +431,6 @@
                     </div>
                     <div class="s-row">
                       <div class="s-row-label">
-                        <div class="s-row-name">Действие контроллера</div>
-                      </div>
-                      <select class="s-input" id="c_controller_action">
-                        <option>on</option>
-                        <option>off</option>
-                        <option>pulse</option>
-                      </select>
-                    </div>
-                    <div class="s-row">
-                      <div class="s-row-label">
                         <div class="s-row-name">Режим фильтра списков</div>
                       </div>
                       <select class="s-input" id="c_list_filter_mode">
@@ -461,11 +439,17 @@
                         <option>custom</option>
                       </select>
                     </div>
-                    <div class="s-row">
+                    <div class="s-row" id="c_custom_lists_block" style="display: none">
                       <div class="s-row-label">
-                        <div class="s-row-name">ID списков (через запятую)</div>
+                        <div class="s-row-name">Списки для custom</div>
                       </div>
-                      <input class="s-input" id="c_list_ids" />
+                      <div class="s-input wide" id="c_list_ids_select"></div>
+                    </div>
+                    <div class="s-row" id="c_custom_lists_hint" style="display: none">
+                      <div class="s-row-label"></div>
+                      <div style="font-size: 12px; color: var(--text3)">
+                        Черный список применяется всегда автоматически.
+                      </div>
                     </div>
                   </div>
                 </div>

@@ -155,7 +155,6 @@ def channel_defaults(tracking: Dict[str, Any]) -> Dict[str, Any]:
         "max_plate_size": size_defaults["max_plate_size"].copy(),
         "controller_id": None,
         "controller_relay": 0,
-        "controller_action": "on",
         "list_filter_mode": "all",
         "list_filter_list_ids": [],
     }
