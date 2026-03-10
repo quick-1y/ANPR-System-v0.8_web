@@ -6,6 +6,7 @@ const state = {
   lastPlatesByChannelId: {},
 };
 let eventSource = null;
+let streamReconnectTimer = null;
 function api(path) {
   return `${document.getElementById("apiBase").value.trim()}${path}`;
 }
@@ -246,7 +247,16 @@ function renderEventFeed() {
     const direction = formatDirection(item.direction);
     const div = document.createElement("div");
     div.className = `ev-item ${i === 0 ? "hot" : ""}`;
+    div.setAttribute("role", "button");
+    div.setAttribute("tabindex", "0");
     div.innerHTML = `${flagHtml(item.country)}<div class='ev-body'><div class='ev-plate'>${item.plate || "—"}</div><div class='ev-meta'>${item.channel || `CAM-${item.channel_id || ""}`} · <span>${new Date(item.timestamp || Date.now()).toLocaleTimeString()}</span> · <span class='badge ${direction.badgeClass}'>${direction.label}</span></div></div><div class='ev-conf ${conf < 0.85 ? "warn" : ""}'>${conf.toFixed(2)}</div>`;
+    div.onclick = () => openEventDetails(item);
+    div.onkeydown = (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        openEventDetails(item);
+      }
+    };
     feed.appendChild(div);
 
     if (feed.scrollHeight > feed.clientHeight) {
@@ -1100,7 +1110,19 @@ function addDebug(msg, type = "info") {
     log.removeChild(log.lastElementChild);
   }
 }
+function scheduleStreamReconnect(delayMs = 3000) {
+  if (streamReconnectTimer) return;
+  streamReconnectTimer = setTimeout(() => {
+    streamReconnectTimer = null;
+    setupStream();
+  }, delayMs);
+}
+
 async function setupStream() {
+  if (streamReconnectTimer) {
+    clearTimeout(streamReconnectTimer);
+    streamReconnectTimer = null;
+  }
   if (eventSource) {
     try {
       eventSource.close();
@@ -1112,7 +1134,13 @@ async function setupStream() {
       pushEvent(JSON.parse(m.data));
     } catch (_e) {}
   };
-  eventSource.onerror = () => addDebug("[WARN] stream reconnect", "warn");
+  eventSource.onerror = () => {
+    addDebug("[WARN] stream reconnect", "warn");
+    try {
+      eventSource.close();
+    } catch (_e) {}
+    scheduleStreamReconnect();
+  };
 }
 function fillChannelFilter() {
   const sel = document.getElementById("fltChannel");

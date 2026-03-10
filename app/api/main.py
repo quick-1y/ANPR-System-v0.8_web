@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -335,10 +334,16 @@ def _restart_processor_for_settings() -> None:
         processor.start(channel_id)
 
 
-def _restart_channel_if_running(channel_id: int) -> None:
+def _sync_channel_runtime(channel_id: int, enabled: bool) -> None:
     metric = processor.list_states().get(channel_id)
-    if metric and metric.state == "running":
+    is_running = bool(metric and metric.state == "running")
+    if not enabled:
+        processor.stop(channel_id)
+        return
+    if is_running:
         processor.restart(channel_id)
+    else:
+        processor.start(channel_id)
 
 
 processor = _create_processor()
@@ -575,8 +580,9 @@ def create_channel(payload: ChannelPayload) -> Dict[str, Any]:
         raise HTTPException(status_code=500, detail="Не удалось сохранить канал")
 
     processor.ensure_channel(saved_channel)
-    if saved_channel.get("enabled", True):
-        processor.start(next_id)
+    # Новый канал может создаваться с временным/placeholder source.
+    # Нормализуем lifecycle: запуск только после первого явного сохранения конфигурации.
+    processor.stop(next_id)
     return saved_channel
 
 
@@ -585,17 +591,10 @@ def update_channel(channel_id: int, payload: Dict[str, Any]) -> Dict[str, Any]:
     channels = settings.get_channels()
     for idx, channel in enumerate(channels):
         if int(channel["id"]) == channel_id:
-            was_enabled = bool(channels[idx].get("enabled", True))
             channels[idx].update(payload)
             settings.save_channels(channels)
             processor.ensure_channel(channels[idx])
-            if "enabled" in payload:
-                if bool(channels[idx].get("enabled", True)):
-                    processor.start(channel_id)
-                else:
-                    processor.stop(channel_id)
-            else:
-                _restart_channel_if_running(channel_id)
+            _sync_channel_runtime(channel_id, bool(channels[idx].get("enabled", True)))
             return channels[idx]
     raise HTTPException(status_code=404, detail="Канал не найден")
 
@@ -704,23 +703,29 @@ async def stream_events(request: Request) -> StreamingResponse:
     queue = await event_bus.subscribe()
 
     async def generator():
-        started_at = time.monotonic()
-        max_stream_seconds = 3.0
         try:
+            yield "retry: 3000\n\n"
             while not STREAM_SHUTDOWN.is_set():
                 if await request.is_disconnected():
                     break
-                if (time.monotonic() - started_at) >= max_stream_seconds:
-                    break
                 try:
-                    event = await asyncio.wait_for(queue.get(), timeout=1.0)
+                    event = await asyncio.wait_for(queue.get(), timeout=15.0)
                 except asyncio.TimeoutError:
+                    yield ": ping\n\n"
                     continue
                 yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
         finally:
             await event_bus.unsubscribe(queue)
 
-    return StreamingResponse(generator(), media_type="text/event-stream")
+    return StreamingResponse(
+        generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @app.get("/api/controllers")
