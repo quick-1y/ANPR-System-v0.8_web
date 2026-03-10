@@ -18,7 +18,7 @@ from anpr.infrastructure.list_database import ListDatabase
 from anpr.infrastructure.logging_manager import get_logger
 from anpr.infrastructure.settings_manager import SettingsManager
 from anpr.infrastructure.storage import PostgresEventDatabase, StorageUnavailableError
-from app.api.data_lifecycle import DataLifecycleService, RetentionPolicy
+from app.shared.data_lifecycle import DataLifecycleService, RetentionPolicy
 from packages.anpr_core.channel_runtime import ChannelProcessor
 from packages.anpr_core.event_bus import EventBus
 

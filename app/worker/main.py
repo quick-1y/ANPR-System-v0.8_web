@@ -6,7 +6,7 @@ from typing import Any, Dict
 from fastapi import FastAPI, HTTPException
 
 from anpr.infrastructure.settings_manager import SettingsManager
-from app.api.data_lifecycle import DataLifecycleService, RetentionPolicy
+from app.shared.data_lifecycle import DataLifecycleService, RetentionPolicy
 from anpr.infrastructure.storage import StorageUnavailableError
 
 

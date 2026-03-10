@@ -424,7 +424,7 @@ UI параллельно:
 ### Backend / API
 
 - `app/api/main.py` — главный FastAPI backend;
-- `app/api/data_lifecycle.py` — retention, cleanup, export;
+- `app/shared/data_lifecycle.py` — общая retention/cleanup/export логика для API и worker;
 - `packages/anpr_core/channel_runtime.py` — runtime каналов;
 - `packages/anpr_core/event_bus.py` — in-memory pub/sub для live событий;
 - `packages/anpr_core/event_sink.py` — запись событий в PostgreSQL.
@@ -545,7 +545,7 @@ ANPR-System-v0.8_web/
 │   ├── api/                 # backend API, preview, export, settings
 │   ├── worker/              # retention worker
 │   ├── web/                 # web UI (включая статические флаги: web/images/flags)
-│   └── video_gateway/       # legacy / optional
+│   └── shared/              # общая runtime-логика для API/worker (retention, export)
 ├── packages/
 │   └── anpr_core/           # channel runtime, event bus, sink
 ├── anpr/
@@ -562,9 +562,6 @@ ANPR-System-v0.8_web/
 │   └── README.md
 ├── docker-compose.yml
 ├── nginx/
-├── scripts/
-├── data/
-├── logs/
 ├── requirements.txt
 ├── .env
 ├── .env.example
