@@ -428,23 +428,18 @@
                     </div>
                     <div class="s-row">
                       <div class="s-row-label">
-                        <div class="s-row-name">ID контроллера</div>
+                        <div class="s-row-name">Контроллер</div>
                       </div>
-                      <input
-                        class="s-input sm"
-                        id="c_controller_id"
-                        type="number"
-                      />
+                      <select class="s-input" id="c_controller_id"></select>
                     </div>
                     <div class="s-row">
                       <div class="s-row-label">
-                        <div class="s-row-name">Индекс реле</div>
+                        <div class="s-row-name">Реле</div>
                       </div>
-                      <input
-                        class="s-input sm"
-                        id="c_controller_relay"
-                        type="number"
-                      />
+                      <select class="s-input sm" id="c_controller_relay">
+                        <option value="0">Реле 1</option>
+                        <option value="1">Реле 2</option>
+                      </select>
                     </div>
                     <div class="s-row">
                       <div class="s-row-label">
@@ -723,12 +718,6 @@
                   <div class="s-card-body">
                     <div class="s-row">
                       <div class="s-row-label">
-                        <div class="s-row-name">Выбор контроллера</div>
-                      </div>
-                      <select class="s-input" id="ctrlSelect"></select>
-                    </div>
-                    <div class="s-row">
-                      <div class="s-row-label">
                         <div class="s-row-name">Название</div>
                       </div>
                       <input class="s-input" id="ctrlName" />
@@ -737,7 +726,7 @@
                       <div class="s-row-label">
                         <div class="s-row-name">Тип</div>
                       </div>
-                      <input class="s-input" id="ctrlType" />
+                      <select class="s-input" id="ctrlType"><option value="DTWONDER2CH">DTWONDER2CH</option></select>
                     </div>
                     <div class="s-row">
                       <div class="s-row-label">
@@ -762,7 +751,7 @@
                       </div>
                       <select class="s-input" id="ctrlR0Mode">
                         <option value="pulse">Импульс</option>
-                        <option value="timed">Импульс с таймером</option>
+                        <option value="pulse_timer">Импульс с таймером</option>
                       </select>
                     </div>
                     <div class="s-row">
@@ -773,6 +762,8 @@
                         class="s-input sm"
                         id="ctrlR0Timer"
                         type="number"
+                        min="1"
+                        step="1"
                       />
                     </div>
                     <div class="s-row">
@@ -797,7 +788,7 @@
                       </div>
                       <select class="s-input" id="ctrlR1Mode">
                         <option value="pulse">Импульс</option>
-                        <option value="timed">Импульс с таймером</option>
+                        <option value="pulse_timer">Импульс с таймером</option>
                       </select>
                     </div>
                     <div class="s-row">
@@ -808,6 +799,8 @@
                         class="s-input sm"
                         id="ctrlR1Timer"
                         type="number"
+                        min="1"
+                        step="1"
                       />
                     </div>
                     <div class="s-row">

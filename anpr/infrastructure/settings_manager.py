@@ -9,6 +9,7 @@ import threading
 from typing import Any, Dict, List, Optional
 
 from anpr.infrastructure.logging_manager import get_logger
+from anpr.infrastructure.controller_service import SUPPORTED_CONTROLLER_TYPES
 
 from anpr.infrastructure.settings_migrations import run_settings_migrations
 from anpr.infrastructure.settings_schema import (
@@ -152,6 +153,63 @@ class SettingsManager:
     def _relay_defaults() -> Dict[str, Any]:
         return relay_defaults()
 
+
+    @staticmethod
+    def _normalize_hotkey(value: Any) -> str:
+        raw = str(value or "").strip()
+        if not raw:
+            return ""
+        normalized = raw.upper()
+        parts = [part.strip() for part in normalized.split("+") if part.strip()]
+        modifiers_order = ["CTRL", "ALT", "SHIFT"]
+        modifiers: list[str] = []
+        key_part = ""
+        for part in parts:
+            if part in modifiers_order:
+                if part not in modifiers:
+                    modifiers.append(part)
+                continue
+            if key_part:
+                logger.warning("Некорректный hotkey '%s': больше одной основной клавиши. Значение сохранено без изменений", raw)
+                return raw
+            key_part = part
+        if not key_part:
+            logger.warning("Некорректный hotkey '%s': отсутствует основная клавиша. Значение сохранено без изменений", raw)
+            return raw
+        ordered = [item for item in modifiers_order if item in modifiers]
+        ordered.append(key_part)
+        return "+".join(ordered)
+
+    def _normalize_relay(self, relay: Dict[str, Any]) -> Dict[str, Any]:
+        defaults = self._relay_defaults()
+        normalized = dict(defaults)
+        normalized.update(relay or {})
+        mode = str(normalized.get("mode", "pulse") or "pulse")
+        if mode not in ("pulse", "pulse_timer"):
+            mode = "pulse"
+        normalized["mode"] = mode
+        try:
+            timer = int(normalized.get("timer_seconds", 1) or 1)
+        except (TypeError, ValueError):
+            timer = 1
+        if mode == "pulse":
+            timer = 1
+        normalized["timer_seconds"] = max(1, timer)
+        normalized["hotkey"] = self._normalize_hotkey(normalized.get("hotkey", ""))
+        return normalized
+
+    @staticmethod
+    def _validate_controller_type(controller: Dict[str, Any]) -> None:
+        controller_type = str(controller.get("type") or "").strip()
+        if not controller_type:
+            controller["type"] = "DTWONDER2CH"
+            return
+        if controller_type not in SUPPORTED_CONTROLLER_TYPES:
+            supported = ", ".join(SUPPORTED_CONTROLLER_TYPES)
+            raise ValueError(
+                f"Неподдерживаемый тип контроллера '{controller_type}'. Поддерживаемые типы: {supported}"
+            )
+
     @classmethod
     def _controller_template(cls, controller_id: int) -> Dict[str, Any]:
         return {
@@ -238,6 +296,25 @@ class SettingsManager:
         if channel.get("region") != upgraded_region:
             channel["region"] = upgraded_region
             changed = True
+
+        controller_id = channel.get("controller_id")
+        if controller_id in ("", 0, "0"):
+            controller_id = None
+        elif controller_id is not None:
+            try:
+                controller_id = int(controller_id)
+            except (TypeError, ValueError):
+                controller_id = None
+        if channel.get("controller_id") != controller_id:
+            channel["controller_id"] = controller_id
+            changed = True
+        if channel.get("controller_id") is None:
+            if channel.get("controller_relay") != 0:
+                channel["controller_relay"] = 0
+                changed = True
+            if channel.get("controller_action") != "on":
+                channel["controller_action"] = "on"
+                changed = True
         return changed
 
     def _fill_reconnect_defaults(self, data: Dict[str, Any], defaults: Dict[str, Any]) -> bool:
@@ -296,8 +373,9 @@ class SettingsManager:
                 max_id += 1
                 controller["id"] = max_id
                 changed = True
-            if "type" not in controller:
-                controller["type"] = "DTWONDER2CH"
+            prev_type = controller.get("type")
+            self._validate_controller_type(controller)
+            if controller.get("type") != prev_type:
                 changed = True
             if "name" not in controller:
                 controller["name"] = f"Контроллер {controller_id or max_id}"
@@ -312,13 +390,17 @@ class SettingsManager:
             if not isinstance(relays, list) or len(relays) != 2:
                 controller["relays"] = [self._relay_defaults(), self._relay_defaults()]
                 changed = True
-            else:
-                for relay in relays:
-                    defaults = self._relay_defaults()
-                    for key, value in defaults.items():
-                        if key not in relay:
-                            relay[key] = value
-                            changed = True
+                relays = controller["relays"]
+            normalized_relays = [self._normalize_relay(relay) for relay in relays[:2]]
+            if controller.get("relays") != normalized_relays:
+                controller["relays"] = normalized_relays
+                changed = True
+            hotkeys = [relay.get("hotkey", "") for relay in normalized_relays if relay.get("hotkey")]
+            if len(hotkeys) != len(set(hotkeys)):
+                logger.warning(
+                    "Контроллер %s содержит дубли hotkey в settings; значения сохранены без скрытой модификации",
+                    controller.get("name") or controller.get("id") or "unknown",
+                )
         data["controllers"] = controllers
         return changed
 
@@ -513,8 +595,9 @@ class SettingsManager:
                 max_id += 1
                 controller["id"] = max_id
                 changed = True
-            if "type" not in controller:
-                controller["type"] = "DTWONDER2CH"
+            prev_type = controller.get("type")
+            self._validate_controller_type(controller)
+            if controller.get("type") != prev_type:
                 changed = True
             if "name" not in controller:
                 controller["name"] = f"Контроллер {controller_id or max_id}"
@@ -529,13 +612,17 @@ class SettingsManager:
             if not isinstance(relays, list) or len(relays) != 2:
                 controller["relays"] = [self._relay_defaults(), self._relay_defaults()]
                 changed = True
-            else:
-                for relay in relays:
-                    defaults = self._relay_defaults()
-                    for key, value in defaults.items():
-                        if key not in relay:
-                            relay[key] = value
-                            changed = True
+                relays = controller["relays"]
+            normalized_relays = [self._normalize_relay(relay) for relay in relays[:2]]
+            if controller.get("relays") != normalized_relays:
+                controller["relays"] = normalized_relays
+                changed = True
+            hotkeys = [relay.get("hotkey", "") for relay in normalized_relays if relay.get("hotkey")]
+            if len(hotkeys) != len(set(hotkeys)):
+                logger.warning(
+                    "Контроллер %s содержит дубли hotkey в settings; значения сохранены без скрытой модификации",
+                    controller.get("name") or controller.get("id") or "unknown",
+                )
         if changed:
             self.save_controllers(controllers)
         return copy.deepcopy(controllers)

@@ -17,6 +17,8 @@ CONTROLLER_TYPES = OrderedDict([
     ("DTWONDER2CH", "DTWONDER2CH"),
 ])
 
+SUPPORTED_CONTROLLER_TYPES = tuple(CONTROLLER_TYPES.keys())
+
 RELAY_MODES = OrderedDict([
     ("pulse", "Импульс"),
     ("pulse_timer", "Импульс с таймером"),
@@ -117,5 +119,6 @@ __all__ = [
     "ControllerService",
     "CONTROLLER_TYPES",
     "RELAY_MODES",
+    "SUPPORTED_CONTROLLER_TYPES",
     "build_command_url",
 ]

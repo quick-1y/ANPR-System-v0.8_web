@@ -331,6 +331,7 @@ let channelConfigRequestToken = 0;
 let controllersCache = [];
 let selectedControllerId = null;
 let roiPoints = [];
+const hotkeyMap = new Map();
 let roiDrag = -1;
 let roiBgImage = null;
 
@@ -571,6 +572,113 @@ function setupROI() {
   };
 }
 
+
+function hotkeyFromEvent(event) {
+  const key = String(event.key || "").trim().toUpperCase();
+  if (!key || key === "CONTROL" || key === "SHIFT" || key === "ALT") return "";
+  const parts = [];
+  if (event.ctrlKey) parts.push("CTRL");
+  if (event.altKey) parts.push("ALT");
+  if (event.shiftKey) parts.push("SHIFT");
+  parts.push(key);
+  return parts.join("+");
+}
+
+function isEditingTarget(target) {
+  if (!target) return false;
+  const tag = String(target.tagName || "").toLowerCase();
+  if (["input", "textarea", "select"].includes(tag)) return true;
+  return Boolean(target.closest("[contenteditable='true']"));
+}
+
+function updateRelayTimerState(relayIndex) {
+  const modeEl = document.getElementById(`ctrlR${relayIndex}Mode`);
+  const timerEl = document.getElementById(`ctrlR${relayIndex}Timer`);
+  if (!modeEl || !timerEl) return;
+  const isPulseTimer = modeEl.value === "pulse_timer";
+  timerEl.disabled = !isPulseTimer;
+  if (!isPulseTimer) {
+    timerEl.value = "1";
+  }
+}
+
+function updateChannelControllerBindingState() {
+  const hasController = Boolean(val("c_controller_id"));
+  const relayEl = document.getElementById("c_controller_relay");
+  const actionEl = document.getElementById("c_controller_action");
+  relayEl.disabled = !hasController;
+  actionEl.disabled = !hasController;
+  if (!hasController) {
+    setVal("c_controller_relay", 0);
+    setVal("c_controller_action", "on");
+  }
+}
+
+function renderChannelControllerOptions(selectedId = "") {
+  const select = document.getElementById("c_controller_id");
+  const current = String(selectedId ?? "");
+  select.innerHTML = "";
+  const noneOption = document.createElement("option");
+  noneOption.value = "";
+  noneOption.textContent = "Без контроллера";
+  select.appendChild(noneOption);
+  controllersCache.forEach((controller) => {
+    const option = document.createElement("option");
+    option.value = String(controller.id);
+    option.textContent = controller.name || `Контроллер ${controller.id}`;
+    select.appendChild(option);
+  });
+  select.value = current;
+  if (select.value !== current) {
+    select.value = "";
+  }
+  updateChannelControllerBindingState();
+}
+
+function rebuildHotkeyMap() {
+  hotkeyMap.clear();
+  const pending = new Map();
+  const duplicates = new Set();
+  controllersCache.forEach((controller) => {
+    (controller.relays || []).forEach((relay, relayIndex) => {
+      const hotkey = String(relay.hotkey || "").trim().toUpperCase();
+      if (!hotkey) return;
+      const binding = {
+        controllerId: controller.id,
+        relayIndex,
+        controllerName: controller.name || `Контроллер ${controller.id}`,
+      };
+      if (!pending.has(hotkey)) {
+        pending.set(hotkey, [binding]);
+      } else {
+        pending.get(hotkey).push(binding);
+        duplicates.add(hotkey);
+      }
+    });
+  });
+  duplicates.forEach((hotkey) => {
+    addDebug(`[ERR] duplicate hotkey detected: ${hotkey}. Хоткей отключен до устранения конфликта`, "err");
+  });
+  pending.forEach((bindings, hotkey) => {
+    if (duplicates.has(hotkey)) return;
+    hotkeyMap.set(hotkey, bindings[0]);
+  });
+}
+
+async function triggerHotkey(hotkey) {
+  const binding = hotkeyMap.get(hotkey);
+  if (!binding) return;
+  try {
+    const res = await jfetch(api(`/api/controllers/${binding.controllerId}/test`), "POST", {
+      relay_index: binding.relayIndex,
+      is_on: true,
+    });
+    addDebug(`[OK] hotkey ${hotkey}: ${binding.controllerName}, реле ${binding.relayIndex + 1}, статус=${res.status}`, "ok");
+  } catch (err) {
+    addDebug(`[ERR] hotkey ${hotkey}: ${err.message}`, "err");
+  }
+}
+
 async function selectChannel(id) {
   selectedChannelId = id;
   const requestToken = ++channelConfigRequestToken;
@@ -586,9 +694,10 @@ async function selectChannel(id) {
   setVal("c_name", c.name);
   setVal("c_source", c.source);
   setChk("c_enabled", c.enabled);
-  setVal("c_controller_id", c.controller_id ?? "");
+  renderChannelControllerOptions(c.controller_id ?? "");
   setVal("c_controller_relay", c.controller_relay ?? 0);
   setVal("c_controller_action", c.controller_action || "on");
+  updateChannelControllerBindingState();
   setVal("c_list_filter_mode", c.list_filter_mode || "all");
   setVal("c_list_ids", (c.list_filter_list_ids || []).join(","));
   setVal("c_detection_mode", c.detection_mode || "motion");
@@ -631,11 +740,9 @@ async function saveChannel() {
     name: val("c_name"),
     source: val("c_source"),
     enabled: document.getElementById("c_enabled").checked,
-    controller_id: val("c_controller_id")
-      ? Number(val("c_controller_id"))
-      : null,
-    controller_relay: Number(val("c_controller_relay")),
-    controller_action: val("c_controller_action"),
+    controller_id: val("c_controller_id") ? Number(val("c_controller_id")) : null,
+    controller_relay: val("c_controller_id") ? Number(val("c_controller_relay")) : 0,
+    controller_action: val("c_controller_id") ? val("c_controller_action") : "on",
     list_filter_mode: val("c_list_filter_mode"),
     list_filter_list_ids: parseIds(val("c_list_ids")),
     detection_mode: val("c_detection_mode"),
@@ -695,6 +802,28 @@ async function deleteChannel() {
   addDebug("[OK] channel deleted", "ok");
 }
 
+
+function setControllerFormDisabled(disabled) {
+  [
+    "ctrlName",
+    "ctrlType",
+    "ctrlAddress",
+    "ctrlPassword",
+    "ctrlR0Mode",
+    "ctrlR0Timer",
+    "ctrlR0Hotkey",
+    "ctrlR1Mode",
+    "ctrlR1Timer",
+    "ctrlR1Hotkey",
+    "testRelay0Btn",
+    "testRelay1Btn",
+    "saveControllerBtn",
+  ].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.disabled = !!disabled;
+  });
+}
+
 function fillControllerForm(c) {
   if (!c) {
     setVal("ctrlName", "");
@@ -707,6 +836,7 @@ function fillControllerForm(c) {
     setVal("ctrlR1Mode", "pulse");
     setVal("ctrlR1Timer", 1);
     setVal("ctrlR1Hotkey", "");
+    setControllerFormDisabled(true);
     return;
   }
   setVal("ctrlName", c.name);
@@ -719,12 +849,16 @@ function fillControllerForm(c) {
   setVal("ctrlR1Mode", c.relays?.[1]?.mode || "pulse");
   setVal("ctrlR1Timer", c.relays?.[1]?.timer_seconds || 1);
   setVal("ctrlR1Hotkey", c.relays?.[1]?.hotkey || "");
+  setControllerFormDisabled(false);
+  updateRelayTimerState(0);
+  updateRelayTimerState(1);
 }
 function renderControllerItems() {
   const box = document.getElementById("controllerItems");
   box.innerHTML = "";
   if (!controllersCache.length) {
     box.innerHTML = '<div class="ch-item">Нет контроллеров</div>';
+    setControllerFormDisabled(true);
     return;
   }
   controllersCache.forEach((c) => {
@@ -739,20 +873,10 @@ function selectController(id) {
   selectedControllerId = id;
   const item = controllersCache.find((c) => c.id === id);
   fillControllerForm(item || null);
-  const sel = document.getElementById("ctrlSelect");
-  sel.value = id ? String(id) : "";
   renderControllerItems();
 }
 async function loadControllers() {
   controllersCache = await jfetch(api("/api/controllers"));
-  const sel = document.getElementById("ctrlSelect");
-  sel.innerHTML = "";
-  controllersCache.forEach((c) => {
-    const o = document.createElement("option");
-    o.value = String(c.id);
-    o.textContent = `${c.name}`;
-    sel.appendChild(o);
-  });
   if (controllersCache.length) {
     if (
       !selectedControllerId ||
@@ -764,7 +888,10 @@ async function loadControllers() {
   } else {
     selectedControllerId = null;
     fillControllerForm(null);
+    renderControllerItems();
   }
+  rebuildHotkeyMap();
+  renderChannelControllerOptions(val("c_controller_id"));
   renderControllerItems();
 }
 function controllerPayload() {
@@ -776,13 +903,13 @@ function controllerPayload() {
     relays: [
       {
         mode: val("ctrlR0Mode") || "pulse",
-        timer_seconds: Number(val("ctrlR0Timer") || 1),
-        hotkey: val("ctrlR0Hotkey") || "",
+        timer_seconds: val("ctrlR0Mode") === "pulse_timer" ? Math.max(1, Number(val("ctrlR0Timer") || 1)) : 1,
+        hotkey: (val("ctrlR0Hotkey") || "").trim().toUpperCase(),
       },
       {
         mode: val("ctrlR1Mode") || "pulse",
-        timer_seconds: Number(val("ctrlR1Timer") || 1),
-        hotkey: val("ctrlR1Hotkey") || "",
+        timer_seconds: val("ctrlR1Mode") === "pulse_timer" ? Math.max(1, Number(val("ctrlR1Timer") || 1)) : 1,
+        hotkey: (val("ctrlR1Hotkey") || "").trim().toUpperCase(),
       },
     ],
   };
@@ -792,30 +919,45 @@ async function createController() {
   if (!body.name) {
     body.name = "Контроллер";
   }
-  await jfetch(api("/api/controllers"), "POST", body);
-  await loadControllers();
-  if (controllersCache.length) {
-    selectedControllerId = controllersCache[controllersCache.length - 1].id;
-    selectController(selectedControllerId);
+  try {
+    await jfetch(api("/api/controllers"), "POST", body);
+    await loadControllers();
+    if (controllersCache.length) {
+      selectedControllerId = controllersCache[controllersCache.length - 1].id;
+      selectController(selectedControllerId);
+    }
+    addDebug("[OK] controller created", "ok");
+  } catch (err) {
+    addDebug(`[ERR] ${err.message}`, "err");
+    alert(`Не удалось создать контроллер: ${err.message}`);
   }
-  addDebug("[OK] controller created", "ok");
 }
 async function saveController() {
   if (!selectedControllerId) return;
-  await jfetch(
-    api(`/api/controllers/${selectedControllerId}`),
-    "PUT",
-    controllerPayload(),
-  );
-  await loadControllers();
-  addDebug("[OK] controller updated", "ok");
+  try {
+    await jfetch(
+      api(`/api/controllers/${selectedControllerId}`),
+      "PUT",
+      controllerPayload(),
+    );
+    await loadControllers();
+    addDebug("[OK] controller updated", "ok");
+  } catch (err) {
+    addDebug(`[ERR] ${err.message}`, "err");
+    alert(`Не удалось сохранить контроллер: ${err.message}`);
+  }
 }
 async function deleteController() {
   if (!selectedControllerId) return;
   if (!confirm("Удалить выбранный контроллер?")) return;
-  await jfetch(api(`/api/controllers/${selectedControllerId}`), "DELETE");
-  await loadControllers();
-  addDebug("[OK] controller deleted", "ok");
+  try {
+    await jfetch(api(`/api/controllers/${selectedControllerId}`), "DELETE");
+    await loadControllers();
+    addDebug("[OK] controller deleted", "ok");
+  } catch (err) {
+    addDebug(`[ERR] ${err.message}`, "err");
+    alert(err.message);
+  }
 }
 async function testController(relay) {
   if (!selectedControllerId) return;
@@ -823,7 +965,7 @@ async function testController(relay) {
     relay_index: relay,
     is_on: true,
   });
-  addDebug(`[OK] relay ${relay} test sent`, "ok");
+  addDebug(`[OK] relay ${relay + 1} test sent`, "ok");
 }
 
 function addDebug(msg, type = "info") {
@@ -971,9 +1113,10 @@ document.getElementById("saveControllerBtn").onclick = saveController;
 document.getElementById("deleteControllerBtn").onclick = deleteController;
 document.getElementById("testRelay0Btn").onclick = () => testController(0);
 document.getElementById("testRelay1Btn").onclick = () => testController(1);
+document.getElementById("ctrlR0Mode").onchange = () => updateRelayTimerState(0);
+document.getElementById("ctrlR1Mode").onchange = () => updateRelayTimerState(1);
+document.getElementById("c_controller_id").onchange = updateChannelControllerBindingState;
 document.getElementById("saveDebugBtn").onclick = saveGeneral;
-document.getElementById("ctrlSelect").onchange = (e) =>
-  selectController(Number(e.target.value));
 document.getElementById("roiRefreshBtn").onclick = refreshROISnapshot;
 document.getElementById("roiRefreshBtnBottom").onclick = refreshROISnapshot;
 document.getElementById("roiClearBtn").onclick = () => {
@@ -983,6 +1126,15 @@ document.getElementById("roiClearBtn").onclick = () => {
 };
 document.getElementById("roiApplyBtn").onclick = () =>
   setVal("c_roi_points", JSON.stringify(roiPoints));
+
+
+document.addEventListener("keydown", (event) => {
+  if (event.repeat || isEditingTarget(event.target)) return;
+  const hotkey = hotkeyFromEvent(event);
+  if (!hotkey || !hotkeyMap.has(hotkey)) return;
+  event.preventDefault();
+  triggerHotkey(hotkey);
+});
 
 refreshSystemResources();
 setInterval(refreshSystemResources, 2000);

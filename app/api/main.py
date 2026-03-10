@@ -11,9 +11,9 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator, model_validator
 
-from anpr.infrastructure.controller_service import ControllerService
+from anpr.infrastructure.controller_service import ControllerService, SUPPORTED_CONTROLLER_TYPES
 from anpr.infrastructure.list_database import ListDatabase
 from anpr.infrastructure.logging_manager import get_logger
 from anpr.infrastructure.settings_manager import SettingsManager
@@ -69,6 +69,15 @@ class ChannelConfigPayload(BaseModel):
     roi_enabled: bool = True
     region: ROIRegionPayload = Field(default_factory=ROIRegionPayload)
 
+    @field_validator("controller_id")
+    @classmethod
+    def normalize_controller_id(cls, value: Optional[int]) -> Optional[int]:
+        if value is None:
+            return None
+        if int(value) <= 0:
+            return None
+        return int(value)
+
 
 class ChannelOCRPayload(BaseModel):
     best_shots: int = Field(ge=1, le=20)
@@ -84,12 +93,76 @@ class ChannelFilterPayload(BaseModel):
     max_plate_size: Dict[str, int] = {"width": 600, "height": 240}
 
 
+def _normalize_hotkey(value: str) -> str:
+    normalized = str(value or "").strip().upper()
+    if not normalized:
+        return ""
+    parts = [part.strip() for part in normalized.split("+") if part.strip()]
+    if not parts:
+        return ""
+    modifiers_order = ["CTRL", "ALT", "SHIFT"]
+    seen_modifiers: set[str] = set()
+    normalized_parts: list[str] = []
+    key_part = ""
+    for part in parts:
+        if part in modifiers_order:
+            seen_modifiers.add(part)
+            continue
+        if key_part:
+            raise ValueError("Хоткей должен содержать только одну основную клавишу")
+        key_part = part
+    if not key_part:
+        raise ValueError("Хоткей должен содержать основную клавишу")
+    for modifier in modifiers_order:
+        if modifier in seen_modifiers:
+            normalized_parts.append(modifier)
+    normalized_parts.append(key_part)
+    return "+".join(normalized_parts)
+
+
+class RelayPayload(BaseModel):
+    mode: str = Field(default="pulse", pattern="^(pulse|pulse_timer)$")
+    timer_seconds: int = Field(default=1, ge=1, le=3600)
+    hotkey: str = ""
+
+    @field_validator("hotkey")
+    @classmethod
+    def normalize_hotkey(cls, value: str) -> str:
+        return _normalize_hotkey(value)
+
+    @model_validator(mode="after")
+    def normalize_timer(self) -> "RelayPayload":
+        if self.mode == "pulse":
+            self.timer_seconds = 1
+        return self
+
+
 class ControllerPayload(BaseModel):
     name: str
-    type: str = "DTWONDER2CH"
+    type: str = Field(default="DTWONDER2CH", min_length=1, max_length=64)
     address: str
     password: str = "0"
-    relays: List[Dict[str, Any]]
+    relays: List[RelayPayload]
+
+    @field_validator("type")
+    @classmethod
+    def validate_type(cls, value: str) -> str:
+        controller_type = str(value or "").strip()
+        if not controller_type:
+            return "DTWONDER2CH"
+        if controller_type not in SUPPORTED_CONTROLLER_TYPES:
+            supported = ", ".join(SUPPORTED_CONTROLLER_TYPES)
+            raise ValueError(f"Неподдерживаемый тип контроллера: {controller_type}. Поддерживаются: {supported}")
+        return controller_type
+
+    @model_validator(mode="after")
+    def validate_relays(self) -> "ControllerPayload":
+        if len(self.relays) != 2:
+            raise ValueError("Контроллер должен содержать ровно 2 реле")
+        hotkeys = [relay.hotkey for relay in self.relays if relay.hotkey]
+        if len(hotkeys) != len(set(hotkeys)):
+            raise ValueError("Хоткеи реле должны быть уникальными")
+        return self
 
 
 class ControllerTestPayload(BaseModel):
@@ -271,6 +344,38 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.mount("/web", StaticFiles(directory=str(WEB_DIR), html=True), name="web")
+
+def _controller_exists(controller_id: int) -> bool:
+    return any(int(item.get("id", 0)) == controller_id for item in settings.get_controllers())
+
+
+def _validate_channel_controller_binding(payload: Dict[str, Any]) -> None:
+    controller_id = payload.get("controller_id")
+    if controller_id is None:
+        payload["controller_relay"] = 0
+        payload["controller_action"] = "on"
+        return
+    if not _controller_exists(int(controller_id)):
+        raise HTTPException(status_code=400, detail=f"Контроллер #{controller_id} не найден")
+
+
+def _validate_global_hotkeys(controllers: List[Dict[str, Any]]) -> None:
+    bindings: Dict[str, List[str]] = {}
+    for controller in controllers:
+        controller_name = str(controller.get("name") or controller.get("id") or "unknown")
+        for relay_index, relay in enumerate(controller.get("relays") or []):
+            hotkey = str(relay.get("hotkey") or "").strip().upper()
+            if not hotkey:
+                continue
+            bindings.setdefault(hotkey, []).append(f"{controller_name}:relay{relay_index + 1}")
+    duplicates = {hotkey: places for hotkey, places in bindings.items() if len(places) > 1}
+    if duplicates:
+        details = "; ".join(f"{hotkey} -> {', '.join(places)}" for hotkey, places in sorted(duplicates.items()))
+        raise HTTPException(
+            status_code=422,
+            detail=f"Хоткеи должны быть уникальны глобально между всеми контроллерами: {details}",
+        )
+
 
 
 @app.on_event("startup")
@@ -492,6 +597,7 @@ def put_channel_config(channel_id: int, payload: ChannelConfigPayload) -> Dict[s
     data["min_plate_size"] = payload.min_plate_size.model_dump()
     data["max_plate_size"] = payload.max_plate_size.model_dump()
     data["region"] = payload.region.model_dump()
+    _validate_channel_controller_binding(data)
     return update_channel(channel_id, data)
 
 
@@ -611,6 +717,7 @@ def create_controller(payload: ControllerPayload) -> Dict[str, Any]:
     next_id = max([int(item.get("id", 0)) for item in controllers] + [0]) + 1
     controller = {"id": next_id, **payload.model_dump()}
     controllers.append(controller)
+    _validate_global_hotkeys(controllers)
     settings.save_controllers(controllers)
     return controller
 
@@ -621,6 +728,7 @@ def update_controller(controller_id: int, payload: ControllerPayload) -> Dict[st
     for idx, controller in enumerate(controllers):
         if int(controller.get("id", 0)) == controller_id:
             controllers[idx].update(payload.model_dump())
+            _validate_global_hotkeys(controllers)
             settings.save_controllers(controllers)
             return controllers[idx]
     raise HTTPException(status_code=404, detail="Контроллер не найден")
@@ -628,6 +736,17 @@ def update_controller(controller_id: int, payload: ControllerPayload) -> Dict[st
 
 @app.delete("/api/controllers/{controller_id}")
 def delete_controller(controller_id: int) -> Dict[str, str]:
+    channels_using_controller = [
+        int(channel.get("id", 0))
+        for channel in settings.get_channels()
+        if channel.get("controller_id") is not None and int(channel.get("controller_id", 0)) == controller_id
+    ]
+    if channels_using_controller:
+        used_in = ", ".join(str(item) for item in channels_using_controller)
+        raise HTTPException(
+            status_code=409,
+            detail=f"Контроллер используется в каналах: {used_in}. Сначала отвяжите его в настройках каналов.",
+        )
     controllers = [item for item in settings.get_controllers() if int(item.get("id", 0)) != controller_id]
     settings.save_controllers(controllers)
     return {"status": "deleted"}
