@@ -1,12 +1,10 @@
-#!/usr/bin/env python3
-# /anpr/infrastructure/network_controllers/base.py
 from __future__ import annotations
 
 from typing import Any, Dict, Optional
 
 
 class ControllerAdapter:
-    """Базовый класс для адаптеров сетевых контроллеров."""
+    """Базовый контракт для адаптеров сетевых контроллеров."""
 
     type_name = "BASE"
 

@@ -1,15 +1,13 @@
-#!/usr/bin/env python3
-# /anpr/infrastructure/controller_service.py
 from __future__ import annotations
 
 import threading
 import time
 import urllib.request
 from collections import OrderedDict
-from typing import Any, Dict, Optional
+from typing import Any, Callable, Dict, List, Optional
 
-from anpr.infrastructure.logging_manager import get_logger
-from anpr.infrastructure.network_controllers import CONTROLLER_ADAPTERS
+from common.logging import get_logger
+from controllers.registry import CONTROLLER_ADAPTERS
 
 logger = get_logger(__name__)
 
@@ -115,8 +113,116 @@ class ControllerService:
         return url
 
 
+class ControllerAutomationService:
+    """Реакция контроллера на уже сформированные ANPR события."""
+
+    def __init__(
+        self,
+        controller_service: ControllerService,
+        *,
+        get_channels: Callable[[], List[Dict[str, Any]]],
+        get_controllers: Callable[[], List[Dict[str, Any]]],
+        plate_in_list_type: Callable[[str, str], bool],
+        plate_in_lists: Callable[[str, List[int]], bool],
+    ) -> None:
+        self._controller_service = controller_service
+        self._get_channels = get_channels
+        self._get_controllers = get_controllers
+        self._plate_in_list_type = plate_in_list_type
+        self._plate_in_lists = plate_in_lists
+
+    @staticmethod
+    def _normalize_positive_int_ids(raw_ids: Any) -> List[int]:
+        if not isinstance(raw_ids, list):
+            return []
+        normalized_ids: List[int] = []
+        for item in raw_ids:
+            try:
+                value = int(item)
+            except (TypeError, ValueError):
+                continue
+            if value > 0 and value not in normalized_ids:
+                normalized_ids.append(value)
+        return normalized_ids
+
+    def _resolve_channel_controller_action(self, channel: Dict[str, Any], plate: str) -> tuple[bool, str]:
+        mode = str(channel.get("list_filter_mode") or "all").strip().lower()
+        if self._plate_in_list_type(plate, "black"):
+            return False, "blacklisted"
+        if mode == "all":
+            return True, "matched:all"
+        if mode == "whitelist":
+            if self._plate_in_list_type(plate, "white"):
+                return True, "matched:whitelist"
+            return False, "whitelist miss"
+        if mode == "custom":
+            list_ids = self._normalize_positive_int_ids(channel.get("list_filter_list_ids"))
+            if self._plate_in_lists(plate, list_ids):
+                return True, "matched:custom"
+            return False, "custom miss"
+        return True, "matched:fallback"
+
+    def handle_event(self, event: Dict[str, Any]) -> None:
+        channel_id = int(event.get("channel_id") or 0)
+        plate = str(event.get("plate") or "").strip()
+        if channel_id <= 0 or not plate:
+            return
+
+        channel = next((item for item in self._get_channels() if int(item.get("id", 0)) == channel_id), None)
+        if not channel:
+            logger.debug("channel %s relay skip: channel not found", channel_id)
+            return
+
+        controller_id = channel.get("controller_id")
+        if controller_id is None:
+            logger.debug("channel %s relay skip: no controller", channel_id)
+            return
+
+        allowed, reason = self._resolve_channel_controller_action(channel, plate)
+        if not allowed:
+            logger.debug("channel %s relay skip: %s (plate=%s)", channel_id, reason, plate)
+            return
+
+        controller = next((item for item in self._get_controllers() if int(item.get("id", 0)) == int(controller_id)), None)
+        if not controller:
+            logger.debug("channel %s relay skip: controller not found (controller_id=%s)", channel_id, controller_id)
+            return
+
+        relay_index = int(channel.get("controller_relay", 0) or 0)
+        url = self._controller_service.send_command(
+            controller,
+            relay_index,
+            True,
+            reason=f"anpr channel={channel_id} plate={plate} {reason}",
+        )
+        if not url:
+            logger.debug(
+                "channel %s relay skip: command failed / timeout (controller_id=%s relay=%s plate=%s)",
+                channel_id,
+                controller_id,
+                relay_index,
+                plate,
+            )
+            return
+        logger.debug(
+            "channel %s relay command sent: controller_id=%s relay=%s plate=%s reason=%s",
+            channel_id,
+            controller_id,
+            relay_index,
+            plate,
+            reason,
+        )
+
+    def dispatch_event(self, event: Dict[str, Any]) -> None:
+        try:
+            self.handle_event(event)
+        except Exception as exc:  # noqa: BLE001
+            logger.error("controller binding processing failed: %s", exc)
+
+
 __all__ = [
     "ControllerService",
+    "ControllerAutomationService",
     "CONTROLLER_TYPES",
     "RELAY_MODES",
     "SUPPORTED_CONTROLLER_TYPES",

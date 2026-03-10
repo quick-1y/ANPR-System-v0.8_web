@@ -438,6 +438,15 @@ UI параллельно:
 - `anpr/postprocessing/validator.py` — валидация по конфигам стран;
 - `anpr/detection/motion_detector.py` — модуль motion detection, пока не включён в основной runtime path.
 
+### Controllers (интеграция с оборудованием)
+
+- `controllers/service.py` — отправка команд контроллерам и автоматическая реакция на готовые ANPR-события;
+- `controllers/registry.py` — реестр поддерживаемых адаптеров;
+- `controllers/base.py` — базовый контракт адаптера;
+- `controllers/adapters/dtwonder2ch.py` — адаптер типа **DTWONDER2CH**.
+
+Слой `controllers` не входит в ANPR core: runtime каналов формирует событие распознавания, а контроллерный слой отдельно принимает это событие и решает, отправлять ли команду на реле.
+
 ### Web UI
 
 `app/web/index.html` — операторская панель с вкладками:
@@ -511,7 +520,7 @@ UI параллельно:
 
 #### Фильтрация событий для автосработки реле
 
-Для каждого события ANPR runtime использует привязку канала к контроллеру и `list_filter_mode`:
+Для каждого готового события ANPR слой `controllers` использует привязку канала к контроллеру и `list_filter_mode`:
 
 - `all` — реле срабатывает для любого номера, **кроме** номеров из black list.
 - `whitelist` — реле срабатывает только для номеров из списков типа `white`, но номера из black list блокируются.
@@ -590,6 +599,11 @@ ANPR-System-v0.8_web/
 │   ├── infrastructure/
 │   ├── models/
 │   └── countries/
+├── controllers/
+│   ├── adapters/            # адаптеры конкретных аппаратных контроллеров
+│   ├── base.py              # базовый интерфейс адаптера
+│   ├── registry.py          # реестр поддерживаемых типов
+│   └── service.py           # controller service и automation по ANPR-событиям
 ├── database/
 │   ├── postgres/           # SQL-схема и init-артефакты PostgreSQL
 │   └── README.md

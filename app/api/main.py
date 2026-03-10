@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import threading
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -14,12 +13,12 @@ from fastapi.responses import FileResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-from anpr.infrastructure.controller_service import ControllerService, SUPPORTED_CONTROLLER_TYPES
 from anpr.infrastructure.list_database import ListDatabase
 from anpr.infrastructure.logging_manager import get_logger
 from anpr.infrastructure.settings_manager import SettingsManager
 from anpr.infrastructure.storage import PostgresEventDatabase, StorageUnavailableError
 from app.shared.data_lifecycle import DataLifecycleService, RetentionPolicy
+from controllers import ControllerAutomationService, ControllerService, SUPPORTED_CONTROLLER_TYPES
 from packages.anpr_core.channel_runtime import ChannelProcessor
 from packages.anpr_core.event_bus import EventBus
 
@@ -270,6 +269,13 @@ def _create_events_db() -> PostgresEventDatabase:
 events_db = _create_events_db()
 lists_db = ListDatabase(str(settings.get_storage_settings().get("postgres_dsn", "")).strip())
 controller_service = ControllerService()
+controller_automation = ControllerAutomationService(
+    controller_service,
+    get_channels=settings.get_channels,
+    get_controllers=settings.get_controllers,
+    plate_in_list_type=lists_db.plate_in_list_type,
+    plate_in_lists=lists_db.plate_in_lists,
+)
 event_bus = EventBus()
 MAIN_LOOP: asyncio.AbstractEventLoop | None = None
 STREAM_SHUTDOWN = asyncio.Event()
@@ -307,104 +313,10 @@ def _db_status() -> Dict[str, Any]:
         return {"status": "degraded", "backend": "postgresql", "detail": str(exc)}
 
 
-def _normalize_positive_int_ids(raw_ids: Any) -> List[int]:
-    if not isinstance(raw_ids, list):
-        return []
-    normalized_ids: List[int] = []
-    for item in raw_ids:
-        try:
-            value = int(item)
-        except (TypeError, ValueError):
-            continue
-        if value > 0 and value not in normalized_ids:
-            normalized_ids.append(value)
-    return normalized_ids
-
-
-def _resolve_channel_controller_action(channel: Dict[str, Any], plate: str) -> tuple[bool, str]:
-    mode = str(channel.get("list_filter_mode") or "all").strip().lower()
-    if lists_db.plate_in_list_type(plate, "black"):
-        return False, "blacklisted"
-    if mode == "all":
-        return True, "matched:all"
-    if mode == "whitelist":
-        if lists_db.plate_in_list_type(plate, "white"):
-            return True, "matched:whitelist"
-        return False, "whitelist miss"
-    if mode == "custom":
-        list_ids = _normalize_positive_int_ids(channel.get("list_filter_list_ids"))
-        if lists_db.plate_in_lists(plate, list_ids):
-            return True, "matched:custom"
-        return False, "custom miss"
-    return True, "matched:fallback"
-
-
-def _handle_channel_controller_event(event: Dict[str, Any]) -> None:
-    channel_id = int(event.get("channel_id") or 0)
-    plate = str(event.get("plate") or "").strip()
-    if channel_id <= 0 or not plate:
-        return
-
-    channel = next((item for item in settings.get_channels() if int(item.get("id", 0)) == channel_id), None)
-    if not channel:
-        logger.debug("channel %s relay skip: channel not found", channel_id)
-        return
-
-    controller_id = channel.get("controller_id")
-    if controller_id is None:
-        logger.debug("channel %s relay skip: no controller", channel_id)
-        return
-
-    allowed, reason = _resolve_channel_controller_action(channel, plate)
-    if not allowed:
-        logger.debug("channel %s relay skip: %s (plate=%s)", channel_id, reason, plate)
-        return
-
-    controller = next((item for item in settings.get_controllers() if int(item.get("id", 0)) == int(controller_id)), None)
-    if not controller:
-        logger.debug("channel %s relay skip: controller not found (controller_id=%s)", channel_id, controller_id)
-        return
-
-    relay_index = int(channel.get("controller_relay", 0) or 0)
-    url = controller_service.send_command(
-        controller,
-        relay_index,
-        True,
-        reason=f"anpr channel={channel_id} plate={plate} {reason}",
-    )
-    if not url:
-        logger.debug(
-            "channel %s relay skip: command failed / timeout (controller_id=%s relay=%s plate=%s)",
-            channel_id,
-            controller_id,
-            relay_index,
-            plate,
-        )
-        return
-    logger.debug(
-        "channel %s relay command sent: controller_id=%s relay=%s plate=%s reason=%s",
-        channel_id,
-        controller_id,
-        relay_index,
-        plate,
-        reason,
-    )
-
-
-def _dispatch_controller_event_async(event: Dict[str, Any]) -> None:
-    def _worker() -> None:
-        try:
-            _handle_channel_controller_event(event)
-        except Exception as exc:  # noqa: BLE001
-            logger.error("controller binding processing failed: %s", exc)
-
-    threading.Thread(target=_worker, name="channel-controller-dispatch", daemon=True).start()
-
-
 def _publish_event_sync(event: Dict[str, Any]) -> None:
     if MAIN_LOOP and MAIN_LOOP.is_running():
         MAIN_LOOP.call_soon_threadsafe(asyncio.create_task, event_bus.publish(event))
-    _dispatch_controller_event_async(event)
+    controller_automation.dispatch_event(event)
 
 
 def _restart_processor_for_settings() -> None:

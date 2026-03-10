@@ -1,14 +1,9 @@
-#!/usr/bin/env python3
-# /anpr/infrastructure/network_controllers/dtwonder2ch.py
 from __future__ import annotations
 
 import urllib.parse
 from typing import Any, Dict, Optional
 
-from anpr.infrastructure.logging_manager import get_logger
-from .base import ControllerAdapter
-
-logger = get_logger(__name__)
+from controllers.base import ControllerAdapter
 
 
 def _normalize_password(password: Optional[str]) -> str:

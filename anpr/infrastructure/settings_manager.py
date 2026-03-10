@@ -9,7 +9,7 @@ import threading
 from typing import Any, Dict, List, Optional
 
 from anpr.infrastructure.logging_manager import get_logger
-from anpr.infrastructure.controller_service import SUPPORTED_CONTROLLER_TYPES
+from controllers import SUPPORTED_CONTROLLER_TYPES
 
 from anpr.infrastructure.settings_migrations import run_settings_migrations
 from anpr.infrastructure.settings_schema import (
