@@ -166,9 +166,9 @@ docker compose down -v
 
 ```mermaid
 flowchart TD
-    USER["Оператор / Браузер"] --> UI["Web UI<br/>apps/web/index.html"]
+    USER["Оператор / Браузер"] --> UI["Web UI<br/>app/web/index.html"]
 
-    subgraph API["API service / FastAPI<br/>apps/api/main.py"]
+    subgraph API["API service / FastAPI<br/>app/api/main.py"]
         HTTP["REST API"]
         SSE["SSE stream"]
         PREVIEW["Preview endpoints<br/>snapshot and preview"]
@@ -189,7 +189,7 @@ flowchart TD
         SINK["EventSink"]
     end
 
-    subgraph WORKER["Retention worker<br/>apps/worker/main.py"]
+    subgraph WORKER["Retention worker<br/>app/worker/main.py"]
         SCH["RetentionScheduler"]
         WLIFE["DataLifecycleService"]
     end
@@ -424,8 +424,8 @@ UI параллельно:
 
 ### Backend / API
 
-- `apps/api/main.py` — главный FastAPI backend;
-- `apps/api/data_lifecycle.py` — retention, cleanup, export;
+- `app/api/main.py` — главный FastAPI backend;
+- `app/api/data_lifecycle.py` — retention, cleanup, export;
 - `packages/anpr_core/channel_runtime.py` — runtime каналов;
 - `packages/anpr_core/event_bus.py` — in-memory pub/sub для live событий;
 - `packages/anpr_core/event_sink.py` — запись событий в PostgreSQL.
@@ -441,7 +441,7 @@ UI параллельно:
 
 ### Web UI
 
-`apps/web/index.html` — операторская панель с вкладками:
+`app/web/index.html` — операторская панель с вкладками:
 - Наблюдение;
 - Журнал;
 - Списки;
@@ -452,7 +452,7 @@ UI параллельно:
 
 ### Worker
 
-`apps/worker/main.py` — отдельный retention worker.
+`app/worker/main.py` — отдельный retention worker.
 
 ---
 
@@ -542,7 +542,7 @@ UI параллельно:
 
 ```text
 ANPR-System-v0.8_web/
-├── apps/
+├── app/
 │   ├── api/                 # backend API, preview, export, settings
 │   ├── worker/              # retention worker
 │   ├── web/                 # web UI (включая статические флаги: web/images/flags)
