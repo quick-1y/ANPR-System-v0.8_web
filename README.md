@@ -73,7 +73,6 @@ Web-first система автоматического распознавани
 
 ```bash
 cp .env.example .env
-mkdir -p config
 ```
 
 ### Рекомендуемый запуск
