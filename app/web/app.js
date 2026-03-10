@@ -64,6 +64,22 @@ function switchChannelSettingsTab(name) {
   }
 }
 
+function syncChannelConfigVisibility() {
+  const pane = document.getElementById("channelConfigPane");
+  const empty = document.getElementById("channelConfigEmpty");
+  const hasSelectedChannel = Boolean(selectedChannelId);
+  if (pane) pane.style.display = hasSelectedChannel ? "block" : "none";
+  if (empty) empty.style.display = hasSelectedChannel ? "none" : "flex";
+}
+
+function syncControllerConfigVisibility() {
+  const pane = document.getElementById("controllerConfigPane");
+  const empty = document.getElementById("controllerConfigEmpty");
+  const hasSelectedController = Boolean(selectedControllerId);
+  if (pane) pane.style.display = hasSelectedController ? "block" : "none";
+  if (empty) empty.style.display = hasSelectedController ? "none" : "flex";
+}
+
 
 async function refreshSystemResources() {
   try {
@@ -353,10 +369,19 @@ function parseIds(raw) {
     .filter((x) => Number.isFinite(x));
 }
 
+function applyTheme(theme) {
+  const normalized = String(theme || "dark").toLowerCase() === "light" ? "light" : "dark";
+  document.body.setAttribute("data-theme", normalized);
+  try {
+    localStorage.setItem("anpr_theme", normalized);
+  } catch (_e) {}
+}
+
 async function loadGlobalSettings() {
   const g = await jfetch(api("/api/settings"));
   setVal("g_grid", g.grid);
   setVal("g_theme", g.theme);
+  applyTheme(g.theme);
   setChk("g_sl_enabled", g.reconnect.signal_loss.enabled);
   setVal("g_frame_timeout", g.reconnect.signal_loss.frame_timeout_seconds);
   setVal("g_retry_interval", g.reconnect.signal_loss.retry_interval_seconds);
@@ -385,6 +410,7 @@ async function loadGlobalSettings() {
 }
 
 async function saveGeneral() {
+  applyTheme(val("g_theme"));
   const payload = {
     grid: val("g_grid"),
     theme: val("g_theme"),
@@ -443,6 +469,8 @@ function renderChannelsList() {
   const box = document.getElementById("channelsList");
   box.innerHTML = "";
   if (!state.channels.length) {
+    selectedChannelId = null;
+    syncChannelConfigVisibility();
     box.innerHTML = '<div class="ch-item">Нет каналов</div>';
     return;
   }
@@ -454,10 +482,15 @@ function renderChannelsList() {
     row.onclick = () => selectChannel(c.id);
     box.appendChild(row);
   });
+  if (!state.channels.some((c) => c.id === selectedChannelId)) {
+    selectedChannelId = null;
+  }
   if (!selectedChannelId) {
     selectedChannelId = state.channels[0].id;
     selectChannel(selectedChannelId);
+    return;
   }
+  syncChannelConfigVisibility();
 }
 
 function toCanvasPoint(point, unit, cv) {
@@ -729,6 +762,7 @@ async function triggerHotkey(hotkey) {
 
 async function selectChannel(id) {
   selectedChannelId = id;
+  syncChannelConfigVisibility();
   const requestToken = ++channelConfigRequestToken;
   renderChannelsList();
   const c = await jfetch(api(`/api/channels/${id}/config`));
@@ -828,17 +862,24 @@ async function saveChannel() {
   await refreshChannels();
 }
 async function createChannel() {
-  const name = prompt("Название канала", "Канал");
-  if (!name) return;
-  const source = prompt("Источник RTSP/source", "0") || "0";
-  await jfetch(api("/api/channels"), "POST", {
-    name,
-    source,
-    enabled: true,
-    roi_enabled: true,
-    region: { unit: "percent", points: [] },
-  });
-  await refreshChannels();
+  try {
+    await jfetch(api("/api/channels"), "POST", {
+      name: "Канал",
+      source: "0",
+      enabled: true,
+      roi_enabled: true,
+      region: { unit: "percent", points: [] },
+    });
+    await refreshChannels();
+    if (state.channels.length) {
+      selectedChannelId = state.channels[state.channels.length - 1].id;
+      await selectChannel(selectedChannelId);
+    }
+    addDebug("[OK] channel created", "ok");
+  } catch (err) {
+    addDebug(`[ERR] ${err.message}`, "err");
+    alert(`Не удалось создать канал: ${err.message}`);
+  }
 }
 async function deleteChannel() {
   if (!selectedChannelId) return;
@@ -907,6 +948,7 @@ function renderControllerItems() {
   if (!controllersCache.length) {
     box.innerHTML = '<div class="ch-item">Нет контроллеров</div>';
     setControllerFormDisabled(true);
+    syncControllerConfigVisibility();
     return;
   }
   controllersCache.forEach((c) => {
@@ -919,6 +961,7 @@ function renderControllerItems() {
 }
 function selectController(id) {
   selectedControllerId = id;
+  syncControllerConfigVisibility();
   const item = controllersCache.find((c) => c.id === id);
   fillControllerForm(item || null);
   renderControllerItems();
@@ -938,6 +981,7 @@ async function loadControllers() {
     fillControllerForm(null);
     renderControllerItems();
   }
+  syncControllerConfigVisibility();
   rebuildHotkeyMap();
   renderChannelControllerOptions(val("c_controller_id"));
   renderControllerItems();
@@ -1166,8 +1210,13 @@ document.getElementById("ctrlR1Mode").onchange = () => updateRelayTimerState(1);
 document.getElementById("c_controller_id").onchange = updateChannelControllerBindingState;
 document.getElementById("c_list_filter_mode").onchange = updateCustomListsVisibility;
 document.getElementById("saveDebugBtn").onclick = saveGeneral;
+document.getElementById("g_theme").onchange = () => applyTheme(val("g_theme"));
+document.getElementById("themeToggleBtn").onclick = () => {
+  const nextTheme = val("g_theme") === "light" ? "dark" : "light";
+  setVal("g_theme", nextTheme);
+  applyTheme(nextTheme);
+};
 document.getElementById("roiRefreshBtn").onclick = refreshROISnapshot;
-document.getElementById("roiRefreshBtnBottom").onclick = refreshROISnapshot;
 document.getElementById("roiClearBtn").onclick = () => {
   roiPoints = [];
   setVal("c_roi_points", "[]");
@@ -1206,6 +1255,13 @@ window.addEventListener("pagehide", () => {
 window.addEventListener("resize", renderEventFeed);
 (async function init() {
   document.getElementById("apiBase").value = window.location.origin;
+  try {
+    applyTheme(localStorage.getItem("anpr_theme") || "dark");
+  } catch (_e) {
+    applyTheme("dark");
+  }
+  syncChannelConfigVisibility();
+  syncControllerConfigVisibility();
   setupROI();
   switchChannelSettingsTab("channel");
   await refreshChannels();

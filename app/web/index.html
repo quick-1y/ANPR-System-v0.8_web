@@ -3,109 +3,118 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>ANPR Desktop — Новый UI</title>
+    <title>ANPR Web — Панель оператора</title>
     <link
-      href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Onest:wght@300;400;500;600;700&display=swap"
+      href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap"
       rel="stylesheet"
     />
     <link rel="stylesheet" href="/web/styles.css" />
   </head>
   <body>
-    <div class="titlebar">
-      <div class="logo">
-        <div class="logo-icon">🚗</div>
-        <div class="logo-text">ANPR <span>Desktop</span></div>
-      </div>
-      <div class="titlebar-tabs">
-        <div class="ttab active" data-tab="obs">
-          <div class="dot"></div>
-          Наблюдение
+    <div class="app-shell">
+      <aside class="left-rail">
+        <div class="rail-top">
+          <button class="rail-logo" title="ANPR">⌁</button>
         </div>
-        <div class="ttab" data-tab="journal">Журнал</div>
-        <div class="ttab" data-tab="lists">Списки</div>
-        <div class="ttab" data-tab="settings">Настройки</div>
-      </div>
-      <div class="titlebar-right">
-        <input id="apiBase" class="api-input" placeholder="API" />
-        <div class="sys-stat"><span>CPU</span> <b id="cpuStat">12%</b></div>
-        <div class="sys-stat"><span>RAM</span> <b id="ramStat">38%</b></div>
-        <button class="icon-btn" title="Тема">☀</button>
-      </div>
-    </div>
-    <div class="content">
-      <div class="tab-pane active" id="tab-obs">
-        <div class="obs-left">
-          <div class="obs-toolbar">
-            <span class="obs-label">Сетка</span>
-            <select class="grid-select" id="gridSelect">
-              <option value="1x1">1×1</option>
-              <option value="2x2" selected>2×2</option>
-              <option value="2x3">2×3</option>
-              <option value="3x3">3×3</option>
-            </select>
-            <div style="flex: 1"></div>
-            <div class="live-dot"></div>
-            <span
-              style="font-size: 11px; color: var(--text3)"
-              id="channelsCount"
-              >0 каналов</span
-            >
+        <div class="rail-nav">
+          <div class="ttab active" data-tab="obs" title="Наблюдение">
+            <div class="ttab-icon">▦</div>
+            <span>Наблюдение</span>
+            <div class="dot"></div>
           </div>
-          <div class="video-grid" id="videoGrid"></div>
-        </div>
-        <div class="obs-right">
-          <div
-            class="panel-header"
-            style="display: flex; align-items: center; gap: 8px"
-          >
-            <span>Последние события</span>
-            <div style="flex: 1"></div>
-            <div class="live-dot"></div>
+          <div class="ttab" data-tab="journal" title="Журнал">
+            <div class="ttab-icon">≣</div>
+            <span>Журнал</span>
           </div>
-          <div class="event-feed" id="eventFeed"></div>
-        </div>
-      </div>
-      <div class="tab-pane" id="tab-journal">
-        <div class="filter-card">
-          <div class="filter-group">
-            <div class="filter-label">Номер</div>
-            <input
-              class="filter-input"
-              id="fltPlate"
-              placeholder="Поиск по фрагменту..."
-            />
+          <div class="ttab" data-tab="lists" title="Списки">
+            <div class="ttab-icon">☰</div>
+            <span>Списки</span>
           </div>
-          <div class="filter-group">
-            <div class="filter-label">Канал</div>
-            <select class="filter-input" id="fltChannel">
-              <option value="">Все каналы</option>
-            </select>
-          </div>
-          <div style="display: flex; gap: 7px; align-self: flex-end">
-            <button class="btn btn-primary" id="btnFind">Найти</button
-            ><button class="btn btn-ghost" id="btnReset">Сброс</button
-            ><button class="btn btn-ghost" id="btnExport">📤 Экспорт</button>
+          <div class="ttab" data-tab="settings" title="Настройки">
+            <div class="ttab-icon">⚙</div>
+            <span>Настройки</span>
           </div>
         </div>
-        <div class="data-table-wrap">
-          <div class="table-scroll">
-            <table class="data-table">
-              <thead>
-                <tr>
-                  <th>Время</th>
-                  <th>Канал</th>
-                  <th>Страна</th>
-                  <th>Направление</th>
-                  <th>Номер</th>
-                  <th>Уверенность</th>
-                  <th>Источник</th>
-                </tr>
-              </thead>
-              <tbody id="journalBody"></tbody>
-            </table>
+        <div class="rail-bottom">
+          <div class="sys-stat"><span>CPU</span> <b id="cpuStat">12%</b></div>
+          <div class="sys-stat"><span>RAM</span> <b id="ramStat">38%</b></div>
+          <button class="icon-btn" id="themeToggleBtn" title="Тема">◐</button>
+        </div>
+      </aside>
+      <div class="main-shell">
+        <div class="topbar">
+          <div class="topbar-title">ANPR / OPERATOR CONSOLE</div>
+          <div class="topbar-right">
+            <div class="topbar-pill">
+              <div class="live-dot"></div>
+              <span id="channelsCount">0 каналов</span>
+            </div>
+            <input id="apiBase" class="api-input" placeholder="API" />
           </div>
         </div>
-      </div>
+        <div class="content">
+          <div class="tab-pane active" id="tab-obs">
+            <div class="obs-left">
+              <div class="obs-toolbar">
+                <span class="obs-label">Сетка</span>
+                <select class="grid-select" id="gridSelect">
+                  <option value="1x1">1×1</option>
+                  <option value="2x2" selected>2×2</option>
+                  <option value="2x3">2×3</option>
+                  <option value="3x3">3×3</option>
+                </select>
+              </div>
+              <div class="video-grid" id="videoGrid"></div>
+            </div>
+            <div class="obs-right">
+              <div class="panel-header obs-events-header">
+                <span>События</span>
+                <div class="live-dot"></div>
+              </div>
+              <div class="event-feed" id="eventFeed"></div>
+            </div>
+          </div>
+          <div class="tab-pane" id="tab-journal">
+            <div class="filter-card">
+              <div class="filter-group">
+                <div class="filter-label">Номер</div>
+                <input
+                  class="filter-input"
+                  id="fltPlate"
+                  placeholder="Поиск по фрагменту..."
+                />
+              </div>
+              <div class="filter-group">
+                <div class="filter-label">Канал</div>
+                <select class="filter-input" id="fltChannel">
+                  <option value="">Все каналы</option>
+                </select>
+              </div>
+              <div style="display: flex; gap: 7px; align-self: flex-end">
+                <button class="btn btn-primary" id="btnFind">Найти</button
+                ><button class="btn btn-ghost" id="btnReset">Сброс</button
+                ><button class="btn btn-ghost" id="btnExport">📤 Экспорт</button>
+              </div>
+            </div>
+            <div class="data-table-wrap">
+              <div class="table-scroll">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th>Время</th>
+                      <th>Канал</th>
+                      <th>Страна</th>
+                      <th>Направление</th>
+                      <th>Номер</th>
+                      <th>Уверенность</th>
+                      <th>Источник</th>
+                    </tr>
+                  </thead>
+                  <tbody id="journalBody"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
       <div class="tab-pane" id="tab-lists">
         <div class="lists-sidebar">
           <div class="panel-header">Списки номеров</div>
@@ -365,16 +374,13 @@
           <div class="settings-pane" id="sp-channels">
             <div class="ch-layout">
               <div class="ch-sidebar">
+                <div class="sidebar-toolbar compact-actions">
+                  <button class="icon-btn-sm" id="createChannelBtn">+</button>
+                  <button class="icon-btn-sm" id="deleteChannelBtn">-</button>
+                </div>
                 <div class="ch-list" id="channelsList"></div>
-                <button
-                  class="btn btn-primary"
-                  id="createChannelBtn"
-                  style="margin-top: 8px; width: 100%"
-                >
-                  + Канал
-                </button>
               </div>
-              <div style="flex: 1">
+              <div style="flex: 1" id="channelConfigPane">
                 <div
                   style="
                     display: flex;
@@ -389,14 +395,16 @@
                     data-ch-tab="channel"
                   >
                     Канал</button
-                  ><button class="btn btn-ghost ch-tab" data-ch-tab="motion">
-                    Детектор движения</button
-                  ><button class="btn btn-ghost ch-tab" data-ch-tab="plates">
-                    Детектор номерных рамок</button
-                  ><button class="btn btn-ghost ch-tab" data-ch-tab="ocr">
-                    Распознавание номера</button
                   ><button class="btn btn-ghost ch-tab" data-ch-tab="roi">
-                    Зона распознавания
+                    ROI</button
+                  ><button class="btn btn-ghost ch-tab" data-ch-tab="ocr">
+                    OCR</button
+                  ><button class="btn btn-ghost ch-tab" data-ch-tab="plates">
+                    Детектор</button
+                  ><button class="btn btn-ghost ch-tab" data-ch-tab="motion">
+                    Движение</button
+                  ><button class="btn btn-ghost ch-tab" data-ch-tab="controller">
+                    Контроллер
                   </button>
                 </div>
                 <div class="s-card ch-group" id="ch-group-channel">
@@ -413,21 +421,6 @@
                         <div class="s-row-name">Источник / RTSP</div>
                       </div>
                       <input class="s-input wide" id="c_source" />
-                    </div>
-                    <div class="s-row">
-                      <div class="s-row-label">
-                        <div class="s-row-name">Контроллер</div>
-                      </div>
-                      <select class="s-input" id="c_controller_id"></select>
-                    </div>
-                    <div class="s-row">
-                      <div class="s-row-label">
-                        <div class="s-row-name">Реле</div>
-                      </div>
-                      <select class="s-input sm" id="c_controller_relay">
-                        <option value="0">Реле 1</option>
-                        <option value="1">Реле 2</option>
-                      </select>
                     </div>
                     <div class="s-row">
                       <div class="s-row-label">
@@ -647,56 +640,51 @@
                     </div>
                   </div>
                 </div>
+                <div
+                  class="s-card ch-group"
+                  id="ch-group-controller"
+                  style="display: none"
+                >
+                  <div class="s-card-header">Контроллер</div>
+                  <div class="s-card-body">
+                    <div class="s-row">
+                      <div class="s-row-label">
+                        <div class="s-row-name">Контроллер</div>
+                      </div>
+                      <select class="s-input" id="c_controller_id"></select>
+                    </div>
+                    <div class="s-row">
+                      <div class="s-row-label">
+                        <div class="s-row-name">Реле</div>
+                      </div>
+                      <select class="s-input sm" id="c_controller_relay">
+                        <option value="0">Реле 1</option>
+                        <option value="1">Реле 2</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
                 <div style="display: flex; gap: 8px">
                   <button class="btn btn-primary" id="saveChannelBtn">
-                    Сохранить канал</button
-                  ><button class="btn btn-ghost" id="deleteChannelBtn">
-                    Удалить канал</button
-                  ><button class="btn btn-ghost" id="roiRefreshBtnBottom">
-                    Обновить кадр
+                    Сохранить канал
                   </button>
                 </div>
+              </div>
+              <div class="empty-pane" id="channelConfigEmpty">
+                Выберите канал в списке или создайте новый.
               </div>
             </div>
           </div>
           <div class="settings-pane" id="sp-controllers">
-            <div style="display: flex; gap: 12px; min-height: 520px">
-              <div
-                style="
-                  width: 210px;
-                  display: flex;
-                  flex-direction: column;
-                  gap: 8px;
-                "
-              >
-                <div style="display: flex; gap: 6px">
-                  <button
-                    class="btn btn-ghost"
-                    id="createControllerBtn"
-                    style="padding: 4px 10px"
-                  >
-                    +</button
-                  ><button
-                    class="btn btn-ghost"
-                    id="deleteControllerBtn"
-                    style="padding: 4px 10px"
-                  >
-                    -
-                  </button>
+            <div class="ch-layout">
+              <div class="ch-sidebar">
+                <div class="sidebar-toolbar compact-actions">
+                  <button class="icon-btn-sm" id="createControllerBtn">+</button
+                  ><button class="icon-btn-sm" id="deleteControllerBtn">-</button>
                 </div>
-                <div
-                  id="controllerItems"
-                  style="
-                    flex: 1;
-                    overflow: auto;
-                    border: 1px solid var(--border);
-                    border-radius: 10px;
-                    padding: 6px;
-                    background: var(--field);
-                  "
-                ></div>
+                <div class="ch-list" id="controllerItems"></div>
               </div>
-              <div style="flex: 1">
+              <div style="flex: 1" id="controllerConfigPane">
                 <div class="s-card">
                   <div class="s-card-header">Параметры контроллера</div>
                   <div class="s-card-body">
@@ -803,6 +791,9 @@
                 <button class="btn btn-primary" id="saveControllerBtn">
                   Сохранить контроллер
                 </button>
+              </div>
+              <div class="empty-pane" id="controllerConfigEmpty">
+                Выберите контроллер в списке или создайте новый.
               </div>
             </div>
           </div>
