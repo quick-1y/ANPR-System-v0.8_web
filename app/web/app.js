@@ -64,6 +64,22 @@ function switchChannelSettingsTab(name) {
   }
 }
 
+function syncChannelConfigVisibility() {
+  const pane = document.getElementById("channelConfigPane");
+  const empty = document.getElementById("channelConfigEmpty");
+  const hasSelectedChannel = Boolean(selectedChannelId);
+  if (pane) pane.style.display = hasSelectedChannel ? "block" : "none";
+  if (empty) empty.style.display = hasSelectedChannel ? "none" : "flex";
+}
+
+function syncControllerConfigVisibility() {
+  const pane = document.getElementById("controllerConfigPane");
+  const empty = document.getElementById("controllerConfigEmpty");
+  const hasSelectedController = Boolean(selectedControllerId);
+  if (pane) pane.style.display = hasSelectedController ? "block" : "none";
+  if (empty) empty.style.display = hasSelectedController ? "none" : "flex";
+}
+
 
 async function refreshSystemResources() {
   try {
@@ -443,6 +459,8 @@ function renderChannelsList() {
   const box = document.getElementById("channelsList");
   box.innerHTML = "";
   if (!state.channels.length) {
+    selectedChannelId = null;
+    syncChannelConfigVisibility();
     box.innerHTML = '<div class="ch-item">Нет каналов</div>';
     return;
   }
@@ -454,10 +472,15 @@ function renderChannelsList() {
     row.onclick = () => selectChannel(c.id);
     box.appendChild(row);
   });
+  if (!state.channels.some((c) => c.id === selectedChannelId)) {
+    selectedChannelId = null;
+  }
   if (!selectedChannelId) {
     selectedChannelId = state.channels[0].id;
     selectChannel(selectedChannelId);
+    return;
   }
+  syncChannelConfigVisibility();
 }
 
 function toCanvasPoint(point, unit, cv) {
@@ -729,6 +752,7 @@ async function triggerHotkey(hotkey) {
 
 async function selectChannel(id) {
   selectedChannelId = id;
+  syncChannelConfigVisibility();
   const requestToken = ++channelConfigRequestToken;
   renderChannelsList();
   const c = await jfetch(api(`/api/channels/${id}/config`));
@@ -907,6 +931,7 @@ function renderControllerItems() {
   if (!controllersCache.length) {
     box.innerHTML = '<div class="ch-item">Нет контроллеров</div>';
     setControllerFormDisabled(true);
+    syncControllerConfigVisibility();
     return;
   }
   controllersCache.forEach((c) => {
@@ -919,6 +944,7 @@ function renderControllerItems() {
 }
 function selectController(id) {
   selectedControllerId = id;
+  syncControllerConfigVisibility();
   const item = controllersCache.find((c) => c.id === id);
   fillControllerForm(item || null);
   renderControllerItems();
@@ -938,6 +964,7 @@ async function loadControllers() {
     fillControllerForm(null);
     renderControllerItems();
   }
+  syncControllerConfigVisibility();
   rebuildHotkeyMap();
   renderChannelControllerOptions(val("c_controller_id"));
   renderControllerItems();
@@ -1167,7 +1194,6 @@ document.getElementById("c_controller_id").onchange = updateChannelControllerBin
 document.getElementById("c_list_filter_mode").onchange = updateCustomListsVisibility;
 document.getElementById("saveDebugBtn").onclick = saveGeneral;
 document.getElementById("roiRefreshBtn").onclick = refreshROISnapshot;
-document.getElementById("roiRefreshBtnBottom").onclick = refreshROISnapshot;
 document.getElementById("roiClearBtn").onclick = () => {
   roiPoints = [];
   setVal("c_roi_points", "[]");
@@ -1206,6 +1232,8 @@ window.addEventListener("pagehide", () => {
 window.addEventListener("resize", renderEventFeed);
 (async function init() {
   document.getElementById("apiBase").value = window.location.origin;
+  syncChannelConfigVisibility();
+  syncControllerConfigVisibility();
   setupROI();
   switchChannelSettingsTab("channel");
   await refreshChannels();
