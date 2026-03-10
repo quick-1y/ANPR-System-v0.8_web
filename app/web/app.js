@@ -852,17 +852,24 @@ async function saveChannel() {
   await refreshChannels();
 }
 async function createChannel() {
-  const name = prompt("Название канала", "Канал");
-  if (!name) return;
-  const source = prompt("Источник RTSP/source", "0") || "0";
-  await jfetch(api("/api/channels"), "POST", {
-    name,
-    source,
-    enabled: true,
-    roi_enabled: true,
-    region: { unit: "percent", points: [] },
-  });
-  await refreshChannels();
+  try {
+    await jfetch(api("/api/channels"), "POST", {
+      name: "Канал",
+      source: "0",
+      enabled: true,
+      roi_enabled: true,
+      region: { unit: "percent", points: [] },
+    });
+    await refreshChannels();
+    if (state.channels.length) {
+      selectedChannelId = state.channels[state.channels.length - 1].id;
+      await selectChannel(selectedChannelId);
+    }
+    addDebug("[OK] channel created", "ok");
+  } catch (err) {
+    addDebug(`[ERR] ${err.message}`, "err");
+    alert(`Не удалось создать канал: ${err.message}`);
+  }
 }
 async function deleteChannel() {
   if (!selectedChannelId) return;
