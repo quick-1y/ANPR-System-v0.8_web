@@ -1,10 +1,15 @@
 from __future__ import annotations
 
+import re
 import threading
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Dict, Optional
+
+import cv2
+import numpy as np
 
 from anpr.infrastructure.logging_manager import get_logger
 from packages.anpr_core.event_sink import EventSink
@@ -45,9 +50,12 @@ class ChannelProcessor:
         self._event_callback = event_callback
         self._contexts: Dict[int, ChannelContext] = {}
         self._lock = threading.RLock()
-        storage = storage_settings or {}
-        self._sink = EventSink(postgres_dsn=str(storage.get("postgres_dsn", "")))
+        self._storage_settings = storage_settings or {}
+        self._sink = EventSink(postgres_dsn=str(self._storage_settings.get("postgres_dsn", "")))
         self._plate_settings = plate_settings or {}
+        screenshots_dir = str(self._storage_settings.get("screenshots_dir", "data/screenshots")).strip() or "data/screenshots"
+        self._screenshots_dir = Path(screenshots_dir).expanduser().resolve()
+        self._screenshots_dir.mkdir(parents=True, exist_ok=True)
 
     def list_states(self) -> Dict[int, ChannelMetrics]:
         with self._lock:
@@ -100,9 +108,64 @@ class ChannelProcessor:
         self.stop(channel_id)
         self.start(channel_id)
 
-    def _run_channel(self, channel_id: int) -> None:
-        import cv2
 
+    @staticmethod
+    def _sanitize_for_filename(value: str) -> str:
+        safe = re.sub(r"[^A-Za-z0-9_-]", "_", str(value or "").strip())
+        safe = re.sub(r"_+", "_", safe).strip("_")
+        return safe or "unknown"
+
+    @staticmethod
+    def _clip_bbox(bbox: Any, frame_shape: tuple[int, ...]) -> Optional[tuple[int, int, int, int]]:
+        if not bbox or len(bbox) < 4:
+            return None
+        height, width = frame_shape[:2]
+        try:
+            x1, y1, x2, y2 = (int(float(bbox[0])), int(float(bbox[1])), int(float(bbox[2])), int(float(bbox[3])))
+        except (TypeError, ValueError):
+            return None
+        x1 = max(0, min(x1, width))
+        x2 = max(0, min(x2, width))
+        y1 = max(0, min(y1, height))
+        y2 = max(0, min(y2, height))
+        if x2 <= x1 or y2 <= y1:
+            return None
+        return x1, y1, x2, y2
+
+    def _build_event_media_paths(self, *, event_ts: datetime, channel_id: int, plate: str) -> tuple[Path, Path]:
+        day_dir = self._screenshots_dir / event_ts.strftime("%Y-%m-%d") / f"channel_{channel_id}"
+        day_dir.mkdir(parents=True, exist_ok=True)
+        timestamp_part = event_ts.strftime("%Y%m%dT%H%M%S%fZ")
+        plate_part = self._sanitize_for_filename(plate)
+        base = f"{timestamp_part}_ch{channel_id}_{plate_part}"
+        return day_dir / f"{base}_frame.jpg", day_dir / f"{base}_plate.jpg"
+
+    def _save_jpeg(self, path: Path, image: Optional[np.ndarray]) -> Optional[str]:
+        if image is None or getattr(image, "size", 0) == 0:
+            return None
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            if cv2.imwrite(str(path), image, [int(cv2.IMWRITE_JPEG_QUALITY), 90]):
+                return str(path.resolve())
+            logger.error("Не удалось сохранить snapshot по пути %s", path)
+        except Exception:  # noqa: BLE001
+            logger.exception("Ошибка сохранения snapshot по пути %s", path)
+        return None
+
+    def _extract_plate_crop(self, frame: np.ndarray, detection: Dict[str, Any]) -> Optional[np.ndarray]:
+        plate_image = detection.get("plate_image")
+        if isinstance(plate_image, np.ndarray) and plate_image.size > 0:
+            return plate_image
+        clipped_bbox = self._clip_bbox(detection.get("bbox"), frame.shape)
+        if clipped_bbox is None:
+            return None
+        x1, y1, x2, y2 = clipped_bbox
+        crop = frame[y1:y2, x1:x2]
+        if crop.size == 0:
+            return None
+        return crop
+
+    def _run_channel(self, channel_id: int) -> None:
         with self._lock:
             ctx = self._contexts[channel_id]
             channel = dict(ctx.channel)
@@ -228,17 +291,38 @@ class ChannelProcessor:
                     plate = detection.get("text")
                     if not plate:
                         continue
+                    event_ts = datetime.now(timezone.utc)
+                    frame_file, plate_file = self._build_event_media_paths(event_ts=event_ts, channel_id=channel_id, plate=plate)
+                    frame_path = self._save_jpeg(frame_file, frame)
+                    plate_crop = self._extract_plate_crop(frame, detection)
+                    plate_path = self._save_jpeg(plate_file, plate_crop)
                     event = {
-                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                        "timestamp": event_ts.isoformat(),
                         "channel": channel.get("name", f"Канал {channel_id}"),
                         "channel_id": channel_id,
                         "plate": plate,
                         "country": detection.get("country"),
                         "confidence": float(detection.get("confidence", 0.0)),
                         "source": str(channel.get("source", "")),
+                        "frame_path": frame_path,
+                        "plate_path": plate_path,
                         "direction": detection.get("direction", "UNKNOWN"),
                     }
-                    self._sink.insert_event(**{k: event[k] for k in ("channel", "channel_id", "plate", "country", "confidence", "source", "timestamp", "direction")})
+                    self._sink.insert_event(**{
+                        k: event[k]
+                        for k in (
+                            "channel",
+                            "plate",
+                            "channel_id",
+                            "country",
+                            "confidence",
+                            "source",
+                            "timestamp",
+                            "frame_path",
+                            "plate_path",
+                            "direction",
+                        )
+                    })
                     self._event_callback(event)
                     metrics.last_event_at = event["timestamp"]
                 frames += 1

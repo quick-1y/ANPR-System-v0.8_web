@@ -21,6 +21,8 @@ class EventSink:
         confidence: float,
         source: str,
         timestamp: str,
+        frame_path: Optional[str],
+        plate_path: Optional[str],
         direction: Optional[str],
     ) -> int:
         return self._postgres.insert_event(
@@ -31,5 +33,7 @@ class EventSink:
             confidence=confidence,
             source=source,
             timestamp=timestamp,
+            frame_path=frame_path,
+            plate_path=plate_path,
             direction=direction,
         )

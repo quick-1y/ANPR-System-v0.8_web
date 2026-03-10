@@ -217,8 +217,10 @@ class ANPRPipeline:
 
             x1, y1, x2, y2 = detection["bbox"]
             roi = frame[y1:y2, x1:x2]
+            detection["plate_image"] = None
 
             if roi.size > 0:
+                detection["plate_image"] = roi.copy()
                 processed_plate = self.preprocessor.preprocess(roi)
 
                 if processed_plate.size > 0:
