@@ -238,7 +238,7 @@ class ChannelProcessor:
                         "source": str(channel.get("source", "")),
                         "direction": detection.get("direction", "UNKNOWN"),
                     }
-                    self._sink.insert_event(**{k: event[k] for k in ("channel", "plate", "country", "confidence", "source", "timestamp", "direction")})
+                    self._sink.insert_event(**{k: event[k] for k in ("channel", "channel_id", "plate", "country", "confidence", "source", "timestamp", "direction")})
                     self._event_callback(event)
                     metrics.last_event_at = event["timestamp"]
                 frames += 1

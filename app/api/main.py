@@ -443,6 +443,16 @@ def list_channels() -> List[Dict[str, Any]]:
     return channels
 
 
+
+
+@app.get("/api/channels/last-plates")
+def channels_last_plates() -> Dict[int, Dict[str, Any]]:
+    channel_ids = [int(item.get("id", 0)) for item in settings.get_channels() if int(item.get("id", 0)) > 0]
+    try:
+        return events_db.fetch_last_plates_by_channel_ids(channel_ids)
+    except StorageUnavailableError as exc:
+        raise _storage_503(exc) from exc
+
 @app.get("/api/channels/{channel_id}/snapshot.jpg")
 def channel_snapshot(channel_id: int) -> Response:
     channels = {int(item["id"]): item for item in settings.get_channels()}

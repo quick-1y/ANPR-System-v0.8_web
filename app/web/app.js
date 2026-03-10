@@ -3,6 +3,7 @@ const state = {
   lists: [],
   selectedListId: null,
   allEvents: [],
+  lastPlatesByChannelId: {},
 };
 let eventSource = null;
 function api(path) {
@@ -135,6 +136,7 @@ function createVideoCell(ch, idx) {
   const noSignalHtml = previewReady ? "" : buildNoSignalHtml(statusText);
   cell.innerHTML = `<div class='video-cell-bg'></div><img id='v-${ch.id}' alt='preview CAM-${ch.id}' />${noSignalHtml}<div class='cam-label'>CAM-${String(ch.id).padStart(2, "0")} · ${ch.name}</div><div class='cam-status ${previewReady ? "live" : "off"}'></div><div class='cam-plate' id='plate-${ch.id}'></div>`;
   ensurePreviewStream(cell.querySelector("img"), ch.id);
+  updateChannelLastPlate(ch.id, state.lastPlatesByChannelId[ch.id]);
   return cell;
 }
 
@@ -164,6 +166,7 @@ function updateVideoCell(cell, ch, idx) {
     }
   }
   ensurePreviewStream(cell.querySelector("img"), ch.id);
+  updateChannelLastPlate(ch.id, state.lastPlatesByChannelId[ch.id]);
 }
 
 function renderVideoGrid() {
@@ -193,6 +196,46 @@ function renderVideoGrid() {
   }
 }
 
+
+function resolveChannelIdFromEvent(ev) {
+  const directId = Number(ev.channel_id);
+  if (Number.isFinite(directId) && directId > 0) return directId;
+  const byName = state.channels.find((c) => String(c.name) === String(ev.channel));
+  return byName ? Number(byName.id) : null;
+}
+
+function updateChannelLastPlate(channelId, plateData) {
+  const id = Number(channelId);
+  if (!Number.isFinite(id) || id <= 0) return;
+  const plateNode = document.getElementById(`plate-${id}`);
+  if (!plateNode) return;
+  const plateText = String((plateData || {}).plate || "").trim();
+  plateNode.textContent = plateText;
+  plateNode.style.display = plateText ? "block" : "none";
+}
+
+function applyLastPlate(ev) {
+  const channelId = resolveChannelIdFromEvent(ev);
+  if (!channelId) return;
+  const payload = {
+    plate: ev.plate || "",
+    timestamp: ev.timestamp || null,
+    country: ev.country || null,
+    confidence: ev.confidence ?? null,
+    direction: ev.direction || null,
+  };
+  state.lastPlatesByChannelId[channelId] = payload;
+  updateChannelLastPlate(channelId, payload);
+}
+
+async function hydrateChannelLastPlates() {
+  const rows = await jfetch(api('/api/channels/last-plates'));
+  state.lastPlatesByChannelId = rows || {};
+  Object.entries(state.lastPlatesByChannelId).forEach(([channelId, payload]) => {
+    updateChannelLastPlate(Number(channelId), payload);
+  });
+}
+
 function renderEventFeed() {
   const feed = document.getElementById("eventFeed");
   if (!feed) return;
@@ -204,7 +247,6 @@ function renderEventFeed() {
     const div = document.createElement("div");
     div.className = `ev-item ${i === 0 ? "hot" : ""}`;
     div.innerHTML = `${flagHtml(item.country)}<div class='ev-body'><div class='ev-plate'>${item.plate || "—"}</div><div class='ev-meta'>${item.channel || `CAM-${item.channel_id || ""}`} · <span>${new Date(item.timestamp || Date.now()).toLocaleTimeString()}</span> · <span class='badge ${direction.badgeClass}'>${direction.label}</span></div></div><div class='ev-conf ${conf < 0.85 ? "warn" : ""}'>${conf.toFixed(2)}</div>`;
-    div.onclick = () => highlightPlate(item);
     feed.appendChild(div);
 
     if (feed.scrollHeight > feed.clientHeight) {
@@ -218,6 +260,7 @@ function renderEventFeed() {
 }
 
 function pushEvent(ev) {
+  applyLastPlate(ev);
   state.allEvents.unshift(ev);
   if (state.allEvents.length > 500) state.allEvents.pop();
   renderEventFeed();
@@ -227,20 +270,6 @@ function pushEvent(ev) {
     "ok",
   );
 }
-function highlightPlate(ev) {
-  const ch = state.channels.find(
-    (c) =>
-      String(c.name) === String(ev.channel) ||
-      Number(c.id) === Number(ev.channel_id),
-  );
-  if (!ch) return;
-  const plate = document.getElementById(`plate-${ch.id}`);
-  if (!plate) return;
-  plate.textContent = ev.plate || "";
-  plate.style.display = "block";
-  setTimeout(() => (plate.style.display = "none"), 3000);
-}
-
 async function loadJournal() {
   state.allEvents = await jfetch(api("/api/events?limit=500"));
   renderEventFeed();
@@ -1265,6 +1294,7 @@ window.addEventListener("resize", renderEventFeed);
   setupROI();
   switchChannelSettingsTab("channel");
   await refreshChannels();
+  await hydrateChannelLastPlates();
   await loadJournal();
   await loadLists();
   await loadGlobalSettings();
