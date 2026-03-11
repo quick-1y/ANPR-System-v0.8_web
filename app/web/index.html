@@ -96,9 +96,11 @@
                 </select>
               </div>
               <div style="display: flex; gap: 7px; align-self: flex-end">
-                <button class="btn btn-primary" id="btnFind">Найти</button
-                ><button class="btn btn-ghost" id="btnReset">Сброс</button
-                ><button class="btn btn-ghost" id="btnExport">📤 Экспорт</button>
+                <button class="btn btn-primary" id="btnFind">Найти</button>
+                <button class="btn btn-ghost" id="btnReset">Сброс</button>
+                <button class="btn btn-ghost" id="btnExport">
+                  <img class="btn-icon ui-icon-sm" src="/web/assets/icons/export.svg" alt="" />
+                  <span>Экспорт</span>
               </div>
             </div>
             <div class="data-table-wrap">
@@ -132,19 +134,16 @@
           <div class="lists-main-header">
             <div class="lists-main-title" id="listTitle">—</div>
             <span class="type-badge type-white" id="listTypeBadge"
-              >Белый список</span
-            ><button
+              >Белый список</span>
+            <button
               class="btn btn-ghost"
               style="font-size: 11px; padding: 5px 12px"
               id="addEntryBtn"
             >
-              + Добавить</button
-            ><button
-              class="btn btn-ghost"
-              style="font-size: 11px; padding: 5px 12px"
-              id="exportListBtn"
-            >
-              📤 Экспорт
+              + Добавить</button>
+            <button class="btn btn-ghost" id="exportListBtn">
+              <img class="btn-icon ui-icon-sm" src="/web/assets/icons/export.svg" alt="" />
+              <span>Экспорт</span>
             </button>
           </div>
           <div
