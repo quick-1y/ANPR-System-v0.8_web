@@ -252,6 +252,7 @@ body {
   font-size: 10px; color: var(--text2); font-family: var(--mono);
   text-transform: uppercase; letter-spacing: 0.08em; text-align: left;
 }
+
 .btn-icon {
   width: 14px;
   height: 14px;
@@ -264,6 +265,13 @@ body {
   align-items: center;
   gap: 6px;
 }
+
+.cam-no-signal-icon {
+  width: 26px;
+  height: 26px;
+  opacity: 0.9;
+}
+
 .data-table td { padding: 8px 12px; border-bottom: 1px solid var(--border); color: #a8afc1; }
 .data-table tbody tr:hover { background: rgba(255,255,255,0.015); }
 .plate-cell, .conf-cell, .badge, .list-item-count, .type-badge { font-family: var(--mono); }
