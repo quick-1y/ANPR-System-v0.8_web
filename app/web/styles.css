@@ -76,6 +76,43 @@ body {
 .ttab.active .dot { display: block; }
 .ttab-icon { font-size: 14px; line-height: 1; font-family: var(--mono); }
 
+.ui-icon {
+  display: block;
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  object-fit: contain;
+}
+
+.ui-icon-sm {
+  width: 14px;
+  height: 14px;
+}
+
+.ui-icon-logo {
+  width: 18px;
+  height: 18px;
+}
+
+.rail-logo {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+.ttab-icon {
+  width: 16px;
+  height: 16px;
+  font-size: 0;
+  line-height: 0;
+  font-family: inherit;
+}
+
+.snav-item img {
+  opacity: 0.95;
+}
+
 .sys-stat {
   width: 36px; padding: 4px 3px; border: 1px solid var(--border); border-radius: 6px;
   background: var(--field); text-align: center; display: flex; flex-direction: column;
