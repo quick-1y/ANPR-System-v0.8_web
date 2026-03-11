@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" aria-label="channels">
+        
+<rect x="4.1" y="4.1" width="6.8" height="6.8" rx="1.8" stroke="#d8dce8" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/>
+<rect x="13.1" y="4.1" width="6.8" height="6.8" rx="1.8" stroke="#d8dce8" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/>
+<rect x="4.1" y="13.1" width="6.8" height="6.8" rx="1.8" stroke="#d8dce8" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/>
+<rect x="13.1" y="13.1" width="6.8" height="6.8" rx="1.8" stroke="#e8a838" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/>
+
+        </svg>

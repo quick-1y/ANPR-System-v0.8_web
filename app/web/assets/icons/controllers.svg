@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" aria-label="controllers">
+        
+<rect x="5" y="6.2" width="14" height="11.6" rx="2.6" stroke="#d8dce8" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M9 6.2V4.1M12 6.2V4.1M15 6.2V4.1M9 17.8v2.1M12 17.8v2.1M15 17.8v2.1" stroke="#636b82" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M9 12h6" stroke="#e8a838" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="16.8" cy="12" r="1.1" fill="#e8a838"/>
+
+        </svg>

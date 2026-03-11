@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" aria-label="journal">
+        
+<rect x="5.2" y="3.8" width="13.6" height="16.4" rx="2.4" stroke="#d8dce8" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M8.1 8.3h7.8M8.1 11.8h7.8M8.1 15.3h4.8" stroke="#d8dce8" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="16.3" cy="15.4" r="1.2" fill="#e8a838"/>
+<path d="M16.3 13.2v2.2l1.4 1" stroke="#e8a838" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/>
+
+        </svg>
