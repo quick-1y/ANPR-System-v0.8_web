@@ -43,7 +43,7 @@ body {
   font-size: 13px;
 }
 
-.app-shell { height: 100%; display: grid; grid-template-columns: 52px 1fr; }
+.app-shell { height: 100%; display: grid; grid-template-columns: 56px 1fr; }
 .left-rail {
   background: linear-gradient(180deg, #0f1118 0%, #0b0e15 100%);
   border-right: 1px solid var(--border);
@@ -51,16 +51,31 @@ body {
 }
 .rail-top, .rail-bottom { width: 100%; display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 8px 0; }
 .rail-top { border-bottom: 1px solid var(--border); }
-.rail-bottom { margin-top: auto; border-top: 1px solid var(--border); }
+.rail-bottom {
+  margin-top: auto;
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+  background: linear-gradient(180deg, rgba(14, 16, 22, 0), rgba(14, 16, 22, 0.85) 24%);
+}
 .rail-logo {
   width: 34px; height: 34px; border-radius: 8px; border: 1px solid #3f331c;
   background: linear-gradient(180deg, var(--accent), #bc831e);
   color: #171204; font-family: var(--mono); font-weight: 700; cursor: pointer;
 }
-.rail-nav { display: flex; flex-direction: column; align-items: center; gap: 6px; padding-top: 8px; width: 100%; }
+.rail-nav {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding-top: 8px;
+  width: 100%;
+  overflow-y: auto;
+}
 
 .ttab {
-  width: 36px; height: 36px; border-radius: 8px; border: 1px solid transparent;
+  width: 40px; height: 40px; border-radius: 9px; border: 1px solid transparent;
   display: flex; align-items: center; justify-content: center; color: var(--text2);
   cursor: pointer; position: relative; transition: 0.15s ease;
 }
@@ -102,8 +117,8 @@ body {
 }
 
 .ttab-icon {
-  width: 16px;
-  height: 16px;
+  width: 19px;
+  height: 19px;
   font-size: 0;
   line-height: 0;
   font-family: inherit;
@@ -175,7 +190,7 @@ body {
   height: 100%;
 }
 .video-cell.active { border-color: rgba(232, 168, 56, 0.55); box-shadow: inset 0 0 0 1px rgba(232,168,56,0.2); }
-.video-cell img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; z-index: 1; }
+.video-cell .cam-preview { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; z-index: 1; }
 .video-cell-bg { position: absolute; inset: 0; background: repeating-linear-gradient(45deg, transparent, transparent 18px, rgba(255,255,255,0.018) 18px, rgba(255,255,255,0.018) 36px); }
 .cam-label {
   z-index: 3; position: absolute; left: 8px; top: 8px; padding: 3px 8px; border-radius: 5px;
@@ -199,14 +214,14 @@ body {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 7px;
+  gap: 9px;
   color: var(--text2);
   font-family: var(--mono);
   font-size: 10px;
   pointer-events: none;
 }
 .cam-no-signal p {
-  max-width: min(90%, 320px);
+  max-width: min(88%, 280px);
   padding: 4px 8px;
   border-radius: 999px;
   border: 1px solid var(--border2);
@@ -267,9 +282,11 @@ body {
 }
 
 .cam-no-signal-icon {
-  width: 26px;
-  height: 26px;
+  width: clamp(26px, 5vw, 42px);
+  height: clamp(26px, 5vw, 42px);
   opacity: 0.9;
+  object-fit: contain;
+  flex: 0 0 auto;
 }
 
 .data-table td { padding: 8px 12px; border-bottom: 1px solid var(--border); color: #a8afc1; }
@@ -310,8 +327,14 @@ body {
 #tab-settings { min-height: 0; gap: 10px; padding: 10px; }
 .settings-nav { width: 210px; padding: 8px; display: flex; flex-direction: column; gap: 3px; }
 .snav-label { font-size: 9px; color: var(--text3); padding: 6px 7px 3px; }
-.snav-item { height: 34px; border-radius: 7px; padding: 0 9px; display: flex; gap: 8px; align-items: center; color: var(--text2); cursor: pointer; }
+.snav-item { min-height: 38px; border-radius: 7px; padding: 0 10px; display: flex; gap: 10px; align-items: center; color: var(--text2); cursor: pointer; }
 .snav-item.active { color: var(--accent2); background: rgba(232,168,56,0.14); border: 1px solid rgba(232,168,56,0.38); }
+.snav-item .ui-icon,
+.snav-item .ui-icon-sm {
+  width: 18px;
+  height: 18px;
+}
+
 .settings-content { flex: 1; overflow-y: auto; min-width: 0; padding-right: 2px; }
 .settings-pane { display: none; }
 .settings-pane.active { display: block; }

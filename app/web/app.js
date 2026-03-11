@@ -43,6 +43,7 @@ function switchTab(name) {
     .querySelectorAll(".tab-pane")
     .forEach((p) => p.classList.remove("active"));
   document.getElementById(`tab-${name}`).classList.add("active");
+  updateTopbarTitle();
   if (name === "obs") scheduleVideoGridLayout();
 }
 function switchSettings(name) {
@@ -53,6 +54,38 @@ function switchSettings(name) {
     .querySelectorAll(".settings-pane")
     .forEach((p) => p.classList.remove("active"));
   document.getElementById(`sp-${name}`).classList.add("active");
+  updateTopbarTitle();
+}
+function getActiveTabName() {
+  return document.querySelector(".ttab.active")?.dataset.tab || "obs";
+}
+
+function getActiveSettingsName() {
+  return document.querySelector(".snav-item.active")?.dataset.sp || "general";
+}
+
+function updateTopbarTitle() {
+  const titleNode = document.querySelector(".topbar-title");
+  if (!titleNode) return;
+  const tabLabels = {
+    obs: "Наблюдение",
+    journal: "Журнал",
+    lists: "Списки",
+    settings: "Настройки",
+  };
+  const settingsLabels = {
+    general: "Общие",
+    channels: "Каналы",
+    controllers: "Контроллеры",
+    debug: "Debug",
+  };
+  const activeTab = getActiveTabName();
+  if (activeTab !== "settings") {
+    titleNode.textContent = tabLabels[activeTab] || tabLabels.obs;
+    return;
+  }
+  const activeSettings = getActiveSettingsName();
+  titleNode.textContent = `${tabLabels.settings} / ${settingsLabels[activeSettings] || settingsLabels.general}`;
 }
 function switchChannelSettingsTab(name) {
   document
@@ -125,54 +158,109 @@ function buildNoSignalHtml(statusText) {
   `;
 }
 
+function getCellPreviewSignal(cell, ch) {
+  const metricReady = Boolean((ch.metrics || {}).preview_ready);
+  const imageReady = cell?.dataset.previewLoaded === "1";
+  return metricReady || imageReady;
+}
+
+function ensureNoSignalOverlay(cell) {
+  if (!cell) return null;
+  let overlay = cell.querySelector(".cam-no-signal");
+  if (overlay) return overlay;
+  const preview = cell.querySelector(".cam-preview");
+  if (!preview) return null;
+  preview.insertAdjacentHTML("afterend", buildNoSignalHtml("Ожидание кадра..."));
+  return cell.querySelector(".cam-no-signal");
+}
+
+function setNoSignalVisibility(cell, shouldShow, statusText) {
+  const overlay = ensureNoSignalOverlay(cell);
+  if (!overlay) return;
+  const textNode = overlay.querySelector("p");
+  if (textNode && statusText) textNode.textContent = statusText;
+  const hidden = overlay.dataset.hidden === "1";
+  if (shouldShow === !hidden) return;
+  overlay.dataset.hidden = shouldShow ? "0" : "1";
+  overlay.style.display = shouldShow ? "flex" : "none";
+}
+
+function bindPreviewLifecycle(cell, img) {
+  if (!cell || !img || img.dataset.lifecycleBound === "1") return;
+  img.dataset.lifecycleBound = "1";
+  img.addEventListener("load", () => {
+    cell.dataset.previewLoaded = "1";
+    setNoSignalVisibility(cell, false, cell.dataset.statusText || "");
+    const statusDot = cell.querySelector(".cam-status");
+    if (statusDot) {
+      statusDot.classList.add("live");
+      statusDot.classList.remove("off");
+    }
+  });
+  img.addEventListener("error", () => {
+    cell.dataset.previewLoaded = "0";
+    setNoSignalVisibility(cell, true, cell.dataset.statusText || "Ожидание кадра...");
+    const statusDot = cell.querySelector(".cam-status");
+    if (statusDot) {
+      statusDot.classList.remove("live");
+      statusDot.classList.add("off");
+    }
+  });
+}
+
 function ensurePreviewStream(img, channelId) {
   if (!img) return;
   const url = api(`/api/channels/${channelId}/preview.mjpg`);
   if (img.dataset.url !== url) {
+    const cell = img.closest(".video-cell");
+    if (cell) {
+      cell.dataset.previewLoaded = "0";
+      setNoSignalVisibility(cell, true, cell.dataset.statusText || "Ожидание кадра...");
+    }
     img.dataset.url = url;
     img.src = url;
   }
 }
 
 function createVideoCell(ch, idx) {
-  const previewReady = Boolean((ch.metrics || {}).preview_ready);
   const statusText = statusTextForChannel(ch);
   const cell = document.createElement("div");
   cell.className = `video-cell ${idx === 0 ? "active" : ""}`;
   cell.dataset.channelId = String(ch.id);
-  const noSignalHtml = previewReady ? "" : buildNoSignalHtml(statusText);
-  cell.innerHTML = `<div class='video-cell-bg'></div><img id='v-${ch.id}' alt='preview CAM-${ch.id}' />${noSignalHtml}<div class='cam-label'>CAM-${String(ch.id).padStart(2, "0")} · ${ch.name}</div><div class='cam-status ${previewReady ? "live" : "off"}'></div><div class='cam-plate' id='plate-${ch.id}'></div>`;
-  ensurePreviewStream(cell.querySelector("img"), ch.id);
+  cell.dataset.previewLoaded = "0";
+  cell.dataset.statusText = statusText;
+  cell.innerHTML = `<div class='video-cell-bg'></div><img class='cam-preview' id='v-${ch.id}' alt='preview CAM-${ch.id}' /><div class='cam-label'>${ch.name}</div><div class='cam-status off'></div><div class='cam-plate' id='plate-${ch.id}'></div>`;
+  const preview = cell.querySelector(".cam-preview");
+  bindPreviewLifecycle(cell, preview);
+  ensureNoSignalOverlay(cell);
+  const hasPreviewSignal = getCellPreviewSignal(cell, ch);
+  setNoSignalVisibility(cell, !hasPreviewSignal, statusText);
+  const statusDot = cell.querySelector(".cam-status");
+  if (statusDot) {
+    statusDot.classList.toggle("live", hasPreviewSignal);
+    statusDot.classList.toggle("off", !hasPreviewSignal);
+  }
+  ensurePreviewStream(preview, ch.id);
   updateChannelLastPlate(ch.id, state.lastPlatesByChannelId[ch.id]);
   return cell;
 }
 
 function updateVideoCell(cell, ch, idx) {
-  const previewReady = Boolean((ch.metrics || {}).preview_ready);
+  const statusText = statusTextForChannel(ch);
+  cell.dataset.statusText = statusText;
   cell.classList.toggle("active", idx === 0);
   const label = cell.querySelector(".cam-label");
-  if (label)
-    label.textContent = `CAM-${String(ch.id).padStart(2, "0")} · ${ch.name}`;
+  if (label) label.textContent = ch.name;
+  const hasPreviewSignal = getCellPreviewSignal(cell, ch);
   const statusDot = cell.querySelector(".cam-status");
   if (statusDot) {
-    statusDot.classList.toggle("live", previewReady);
-    statusDot.classList.toggle("off", !previewReady);
+    statusDot.classList.toggle("live", hasPreviewSignal);
+    statusDot.classList.toggle("off", !hasPreviewSignal);
   }
-  const existingNoSignal = cell.querySelector(".cam-no-signal");
-  if (previewReady) {
-    if (existingNoSignal) existingNoSignal.remove();
-  } else {
-    const statusText = statusTextForChannel(ch);
-    if (existingNoSignal) {
-      const statusTextNode = existingNoSignal.querySelector("p");
-      if (statusTextNode) statusTextNode.textContent = statusText;
-    } else {
-      const img = cell.querySelector("img");
-      if (img)
-        img.insertAdjacentHTML("afterend", buildNoSignalHtml(statusText));
-    }
-  }
-  ensurePreviewStream(cell.querySelector("img"), ch.id);
+  setNoSignalVisibility(cell, !hasPreviewSignal, statusText);
+  const preview = cell.querySelector(".cam-preview");
+  bindPreviewLifecycle(cell, preview);
+  ensurePreviewStream(preview, ch.id);
   updateChannelLastPlate(ch.id, state.lastPlatesByChannelId[ch.id]);
 }
 
@@ -570,7 +658,7 @@ function renderChannelsList() {
     const run = (c.metrics || {}).state === "running";
     const row = document.createElement("div");
     row.className = `ch-item ${c.id === selectedChannelId ? "active" : ""}`;
-    row.innerHTML = `<div class='ch-item-dot ${run ? "" : "off"}'></div> CAM-${String(c.id).padStart(2, "0")} · ${c.name}`;
+    row.innerHTML = `<div class='ch-item-dot ${run ? "" : "off"}'></div> ${c.name}`;
     row.onclick = () => selectChannel(c.id);
     box.appendChild(row);
   });
@@ -1375,6 +1463,7 @@ window.addEventListener("resize", renderEventFeed);
   setupVideoGridLayoutGuards();
   setupROI();
   switchChannelSettingsTab("channel");
+  updateTopbarTitle();
   await refreshChannels();
   await hydrateChannelLastPlates();
   await loadJournal();

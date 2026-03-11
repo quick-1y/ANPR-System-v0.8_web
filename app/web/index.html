@@ -53,7 +53,7 @@
       </aside>
       <div class="main-shell">
         <div class="topbar">
-          <div class="topbar-title">ANPR / OPERATOR CONSOLE</div>
+          <div class="topbar-title" id="topbarTitle">Наблюдение</div>
           <div class="topbar-right">
             <div class="topbar-pill">
               <div class="live-dot"></div>
@@ -226,9 +226,7 @@
               </div>
             </div>
             <div class="s-card">
-              <div class="s-card-header">
-                Переподключение + Хранилище + Время + Логи + Номера
-              </div>
+              <div class="s-card-header">Переподключение</div>
               <div class="s-card-body">
                 <div class="s-row">
                   <div class="s-row-label">
@@ -240,21 +238,13 @@
                   <div class="s-row-label">
                     <div class="s-row-name">Таймаут кадра (сек)</div>
                   </div>
-                  <input
-                    class="s-input sm"
-                    id="g_frame_timeout"
-                    type="number"
-                  />
+                  <input class="s-input sm" id="g_frame_timeout" type="number" />
                 </div>
                 <div class="s-row">
                   <div class="s-row-label">
                     <div class="s-row-name">Интервал повтора (сек)</div>
                   </div>
-                  <input
-                    class="s-input sm"
-                    id="g_retry_interval"
-                    type="number"
-                  />
+                  <input class="s-input sm" id="g_retry_interval" type="number" />
                 </div>
                 <div class="s-row">
                   <div class="s-row-label">
@@ -266,132 +256,43 @@
                   <div class="s-row-label">
                     <div class="s-row-name">Период (мин)</div>
                   </div>
-                  <input
-                    class="s-input sm"
-                    id="g_periodic_minutes"
-                    type="number"
-                  />
+                  <input class="s-input sm" id="g_periodic_minutes" type="number" />
                 </div>
-                <div class="s-row">
-                  <div class="s-row-label">
-                    <div class="s-row-name">Каталог скриншотов</div>
-                  </div>
-                  <input class="s-input wide" id="g_screenshots_dir" />
-                </div>
-                <div class="s-row">
-                  <div class="s-row-label">
-                    <div class="s-row-name">Каталог логов</div>
-                  </div>
-                  <input class="s-input wide" id="g_logs_dir" />
-                </div>
-                <div class="s-row">
-                  <div class="s-row-label">
-                    <div class="s-row-name">Автоочистка</div>
-                  </div>
-                  <input type="checkbox" id="g_auto_cleanup" />
-                </div>
-                <div class="s-row">
-                  <div class="s-row-label">
-                    <div class="s-row-name">Интервал очистки (мин)</div>
-                  </div>
-                  <input
-                    class="s-input sm"
-                    id="g_cleanup_minutes"
-                    type="number"
-                  />
-                </div>
-                <div class="s-row">
-                  <div class="s-row-label">
-                    <div class="s-row-name">Хранить события (дней)</div>
-                  </div>
-                  <input
-                    class="s-input sm"
-                    id="g_events_retention"
-                    type="number"
-                  />
-                </div>
-                <div class="s-row">
-                  <div class="s-row-label">
-                    <div class="s-row-name">Хранить медиа (дней)</div>
-                  </div>
-                  <input
-                    class="s-input sm"
-                    id="g_media_retention"
-                    type="number"
-                  />
-                </div>
-                <div class="s-row">
-                  <div class="s-row-label">
-                    <div class="s-row-name">Лимит скриншотов (МБ)</div>
-                  </div>
-                  <input
-                    class="s-input sm"
-                    id="g_max_screenshots"
-                    type="number"
-                  />
-                </div>
-                <div class="s-row">
-                  <div class="s-row-label">
-                    <div class="s-row-name">Каталог экспорта</div>
-                  </div>
-                  <input class="s-input wide" id="g_export_dir" />
-                </div>
-                <div class="s-row">
-                  <div class="s-row-label">
-                    <div class="s-row-name">PostgreSQL DSN</div>
-                  </div>
-                  <input class="s-input wide" id="g_postgres_dsn" />
-                </div>
-                <div class="s-row">
-                  <div class="s-row-label">
-                    <div class="s-row-name">Уровень логов</div>
-                  </div>
-                  <select class="s-input" id="g_log_level">
-                    <option>DEBUG</option>
-                    <option>INFO</option>
-                    <option>WARNING</option>
-                    <option>ERROR</option>
-                    <option>CRITICAL</option>
-                  </select>
-                </div>
-                <div class="s-row">
-                  <div class="s-row-label">
-                    <div class="s-row-name">Хранить логи (дней)</div>
-                  </div>
-                  <input
-                    class="s-input sm"
-                    id="g_log_retention"
-                    type="number"
-                  />
-                </div>
-                <div class="s-row">
-                  <div class="s-row-label">
-                    <div class="s-row-name">Часовой пояс</div>
-                  </div>
-                  <input class="s-input" id="g_timezone" />
-                </div>
-                <div class="s-row">
-                  <div class="s-row-label">
-                    <div class="s-row-name">Смещение (мин)</div>
-                  </div>
-                  <input
-                    class="s-input sm"
-                    id="g_offset_minutes"
-                    type="number"
-                  />
-                </div>
-                <div class="s-row">
-                  <div class="s-row-label">
-                    <div class="s-row-name">Каталог конфигов номеров</div>
-                  </div>
-                  <input class="s-input wide" id="g_plates_dir" />
-                </div>
-                <div class="s-row">
-                  <div class="s-row-label">
-                    <div class="s-row-name">Страны (через запятую)</div>
-                  </div>
-                  <input class="s-input wide" id="g_countries" />
-                </div>
+              </div>
+            </div>
+            <div class="s-card">
+              <div class="s-card-header">Хранилище</div>
+              <div class="s-card-body">
+                <div class="s-row"><div class="s-row-label"><div class="s-row-name">Каталог скриншотов</div></div><input class="s-input wide" id="g_screenshots_dir" /></div>
+                <div class="s-row"><div class="s-row-label"><div class="s-row-name">Каталог логов</div></div><input class="s-input wide" id="g_logs_dir" /></div>
+                <div class="s-row"><div class="s-row-label"><div class="s-row-name">Автоочистка</div></div><input type="checkbox" id="g_auto_cleanup" /></div>
+                <div class="s-row"><div class="s-row-label"><div class="s-row-name">Интервал очистки (мин)</div></div><input class="s-input sm" id="g_cleanup_minutes" type="number" /></div>
+                <div class="s-row"><div class="s-row-label"><div class="s-row-name">Хранить события (дней)</div></div><input class="s-input sm" id="g_events_retention" type="number" /></div>
+                <div class="s-row"><div class="s-row-label"><div class="s-row-name">Хранить медиа (дней)</div></div><input class="s-input sm" id="g_media_retention" type="number" /></div>
+                <div class="s-row"><div class="s-row-label"><div class="s-row-name">Лимит скриншотов (МБ)</div></div><input class="s-input sm" id="g_max_screenshots" type="number" /></div>
+                <div class="s-row"><div class="s-row-label"><div class="s-row-name">Каталог экспорта</div></div><input class="s-input wide" id="g_export_dir" /></div>
+                <div class="s-row"><div class="s-row-label"><div class="s-row-name">PostgreSQL DSN</div></div><input class="s-input wide" id="g_postgres_dsn" /></div>
+              </div>
+            </div>
+            <div class="s-card">
+              <div class="s-card-header">Логи</div>
+              <div class="s-card-body">
+                <div class="s-row"><div class="s-row-label"><div class="s-row-name">Уровень логов</div></div><select class="s-input" id="g_log_level"><option>DEBUG</option><option>INFO</option><option>WARNING</option><option>ERROR</option><option>CRITICAL</option></select></div>
+                <div class="s-row"><div class="s-row-label"><div class="s-row-name">Хранить логи (дней)</div></div><input class="s-input sm" id="g_log_retention" type="number" /></div>
+              </div>
+            </div>
+            <div class="s-card">
+              <div class="s-card-header">Время</div>
+              <div class="s-card-body">
+                <div class="s-row"><div class="s-row-label"><div class="s-row-name">Часовой пояс</div></div><input class="s-input" id="g_timezone" /></div>
+                <div class="s-row"><div class="s-row-label"><div class="s-row-name">Смещение (мин)</div></div><input class="s-input sm" id="g_offset_minutes" type="number" /></div>
+              </div>
+            </div>
+            <div class="s-card">
+              <div class="s-card-header">Номера</div>
+              <div class="s-card-body">
+                <div class="s-row"><div class="s-row-label"><div class="s-row-name">Каталог конфигов номеров</div></div><input class="s-input wide" id="g_plates_dir" /></div>
+                <div class="s-row"><div class="s-row-label"><div class="s-row-name">Страны (через запятую)</div></div><input class="s-input wide" id="g_countries" /></div>
               </div>
             </div>
             <button class="btn btn-primary" id="saveGeneralBtn">
