@@ -13,7 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from anpr.infrastructure.list_database import ListDatabase
-from anpr.infrastructure.logging_manager import get_logger
+from common.logging import configure_logging, get_logger
 from anpr.infrastructure.settings_manager import SettingsManager
 from anpr.infrastructure.storage import PostgresEventDatabase, StorageUnavailableError
 from app.shared.data_lifecycle import DataLifecycleService, RetentionPolicy
@@ -224,7 +224,7 @@ class StoragePayload(BaseModel):
 
 
 class LoggingPayload(BaseModel):
-    level: str = Field(pattern="^(DEBUG|INFO|WARNING|ERROR|CRITICAL)$")
+    level: str = Field(pattern="^(ALL|DEBUG|INFO|WARNING|ERROR|CRITICAL)$")
     retention_days: int = Field(ge=1, le=3650)
 
 
@@ -258,6 +258,7 @@ class GlobalSettingsPayload(BaseModel):
 
 
 settings = SettingsManager()
+configure_logging(settings.get_logging_config(), service_name="api")
 
 
 def _create_events_db() -> PostgresEventDatabase:
@@ -862,6 +863,7 @@ def put_global_settings(payload: GlobalSettingsPayload) -> Dict[str, Any]:
     settings.save_plate_settings(payload.plates.model_dump())
     settings.save_debug_settings(payload.debug.model_dump())
     settings.save_logging_config(payload.logging.model_dump())
+    configure_logging(settings.get_logging_config(), service_name="api")
 
     global events_db, lifecycle, lists_db
     events_db = _create_events_db()

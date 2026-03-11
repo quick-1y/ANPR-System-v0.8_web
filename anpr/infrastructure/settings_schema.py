@@ -7,6 +7,13 @@ from datetime import datetime, timedelta
 from typing import Any, Dict, Optional
 
 SETTINGS_VERSION = 2
+LOG_LEVELS = ("ALL", "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL")
+
+
+def normalize_log_level(value: Any) -> str:
+    normalized = str(value or "INFO").upper()
+    return normalized if normalized in LOG_LEVELS else "INFO"
+
 
 DEFAULT_ROI_POINTS = [
     {"x": 500, "y": 300},
@@ -122,7 +129,7 @@ def time_defaults() -> Dict[str, Any]:
 
 
 def logging_defaults() -> Dict[str, Any]:
-    return {"level": "INFO", "retention_days": 30}
+    return {"level": "INFO", "retention_days": 30, "allowed_levels": list(LOG_LEVELS)}
 
 
 def debug_defaults() -> Dict[str, Any]:

@@ -8,7 +8,7 @@ import yaml
 import threading
 from typing import Any, Dict, List, Optional
 
-from anpr.infrastructure.logging_manager import get_logger
+from common.logging import get_logger
 from controllers import SUPPORTED_CONTROLLER_TYPES
 
 from anpr.infrastructure.settings_migrations import run_settings_migrations
@@ -23,6 +23,7 @@ from anpr.infrastructure.settings_schema import (
     inference_defaults,
     logging_defaults,
     model_defaults,
+    normalize_log_level,
     normalize_region_config as schema_normalize_region_config,
     ocr_defaults,
     plate_defaults,
@@ -547,6 +548,17 @@ class SettingsManager:
             if key not in logging_section:
                 logging_section[key] = val
                 changed = True
+
+        normalized_level = normalize_log_level(logging_section.get("level"))
+        if logging_section.get("level") != normalized_level:
+            logging_section["level"] = normalized_level
+            changed = True
+
+        allowed_levels = defaults.get("allowed_levels") or []
+        if list(logging_section.get("allowed_levels") or []) != list(allowed_levels):
+            logging_section["allowed_levels"] = list(allowed_levels)
+            changed = True
+
         data["logging"] = logging_section
         return changed
 
@@ -852,6 +864,8 @@ class SettingsManager:
         with self._file_lock:
             current = self.settings.get("logging", {})
             current.update(logging_config)
+            current["level"] = normalize_log_level(current.get("level"))
+            current["allowed_levels"] = list(self._logging_defaults().get("allowed_levels", []))
             self.settings["logging"] = current
             settings_snapshot = copy.deepcopy(self.settings)
         self._save(settings_snapshot)

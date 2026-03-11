@@ -11,7 +11,7 @@ from typing import Any, Dict, Optional
 import cv2
 import numpy as np
 
-from anpr.infrastructure.logging_manager import get_logger
+from common.logging import get_logger
 from packages.anpr_core.event_sink import EventSink
 
 logger = get_logger(__name__)

@@ -10,7 +10,7 @@ from typing import Optional
 
 import cv2
 
-from anpr.infrastructure.logging_manager import get_logger, log_perf_stage
+from common.logging import get_logger, log_perf_stage
 from anpr.infrastructure.storage import AsyncEventDatabase
 
 logger = get_logger(__name__)

@@ -13,7 +13,7 @@ from typing import Any, Dict
 import torch
 
 from anpr.infrastructure.settings_manager import SettingsManager
-from anpr.infrastructure.logging_manager import get_logger
+from common.logging import get_logger
 
 
 logger = get_logger(__name__)

@@ -3,11 +3,14 @@ from __future__ import annotations
 import asyncio
 from typing import Any, Dict
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI
 
 from anpr.infrastructure.settings_manager import SettingsManager
-from app.shared.data_lifecycle import DataLifecycleService, RetentionPolicy
 from anpr.infrastructure.storage import StorageUnavailableError
+from app.shared.data_lifecycle import DataLifecycleService, RetentionPolicy
+from common.logging import configure_logging, get_logger
+
+logger = get_logger(__name__)
 
 
 class RetentionScheduler:
@@ -20,9 +23,11 @@ class RetentionScheduler:
         while True:
             policy = self._lifecycle.policy
             if policy.auto_cleanup_enabled:
+                logger.info("Запуск retention cycle (interval_minutes=%s)", policy.cleanup_interval_minutes)
                 try:
                     self._last_run = self._lifecycle.run_retention_cycle()
                 except StorageUnavailableError:
+                    logger.exception("Ошибка retention cycle")
                     self._last_run = {"status": "error"}
             await asyncio.sleep(max(60, policy.cleanup_interval_minutes * 60))
 
@@ -39,6 +44,7 @@ class RetentionScheduler:
 
 
 settings = SettingsManager()
+configure_logging(settings.get_logging_config(), service_name="worker")
 storage = settings.get_storage_settings()
 policy = RetentionPolicy.from_storage(storage)
 lifecycle = DataLifecycleService(
@@ -53,11 +59,13 @@ app = FastAPI(title="ANPR Retention Worker", version="0.8-stage7")
 
 @app.on_event("startup")
 async def startup() -> None:
+    logger.info("Retention worker startup")
     scheduler.start()
 
 
 @app.on_event("shutdown")
 def shutdown() -> None:
+    logger.info("Retention worker shutdown")
     scheduler.stop()
 
 
@@ -72,10 +80,12 @@ def health() -> Dict[str, Any]:
 
 @app.post("/worker/retention/run")
 def run_retention() -> Dict[str, Any]:
+    logger.info("Ручной запуск retention endpoint")
     try:
         result = lifecycle.run_retention_cycle()
         return {"status": "ok", **result}
     except StorageUnavailableError as exc:
+        logger.exception("Ошибка retention cycle при ручном запуске")
         return {"status": "error", "detail": str(exc)}
 
 

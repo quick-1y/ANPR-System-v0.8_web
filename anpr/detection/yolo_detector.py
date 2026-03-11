@@ -9,7 +9,7 @@ import numpy as np
 import torch
 from ultralytics import YOLO
 
-from anpr.infrastructure.logging_manager import get_logger
+from common.logging import get_logger
 
 logger = get_logger(__name__)
 

@@ -111,6 +111,13 @@ docker compose up -d --build
 docker compose logs -f nginx api retention_worker postgres
 ```
 
+Централизованное логирование настроено через единый слой `common/logging.py` для API, worker и runtime-компонентов.
+
+- директория логов берётся из `storage.logs_dir` (по умолчанию `logs`);
+- файлы разделены по сервисам и часу: `api_YYYY-MM-DD_HH-00.log`, `worker_YYYY-MM-DD_HH-00.log`;
+- поддерживаемые уровни: `ALL`, `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`;
+- `ALL` отключает фильтрацию по уровню (в Python logging соответствует `NOTSET`).
+
 Проверки:
 
 ```bash
