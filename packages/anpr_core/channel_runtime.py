@@ -45,17 +45,103 @@ class ChannelContext:
     latest_frame_ts: float = 0.0
 
 
+@dataclass(frozen=True)
+class ReconnectConfig:
+    signal_loss_enabled: bool = True
+    signal_loss_frame_timeout_seconds: int = 5
+    signal_loss_retry_interval_seconds: int = 5
+    periodic_enabled: bool = False
+    periodic_interval_minutes: int = 60
+
+    @property
+    def periodic_interval_seconds(self) -> float:
+        return float(max(1, self.periodic_interval_minutes) * 60)
+
+
 class ChannelProcessor:
-    def __init__(self, event_callback, plate_settings: Dict[str, Any] | None = None, storage_settings: Dict[str, Any] | None = None) -> None:
+    def __init__(
+        self,
+        event_callback,
+        plate_settings: Dict[str, Any] | None = None,
+        storage_settings: Dict[str, Any] | None = None,
+        reconnect_settings: Dict[str, Any] | None = None,
+    ) -> None:
         self._event_callback = event_callback
         self._contexts: Dict[int, ChannelContext] = {}
         self._lock = threading.RLock()
         self._storage_settings = storage_settings or {}
         self._sink = EventSink(postgres_dsn=str(self._storage_settings.get("postgres_dsn", "")))
         self._plate_settings = plate_settings or {}
+        self._reconnect_config = self._build_reconnect_config(reconnect_settings or {})
         screenshots_dir = str(self._storage_settings.get("screenshots_dir", "data/screenshots")).strip() or "data/screenshots"
         self._screenshots_dir = Path(screenshots_dir).expanduser().resolve()
         self._screenshots_dir.mkdir(parents=True, exist_ok=True)
+
+    @staticmethod
+    def _build_reconnect_config(reconnect_settings: Dict[str, Any]) -> ReconnectConfig:
+        signal_loss = reconnect_settings.get("signal_loss") or {}
+        periodic = reconnect_settings.get("periodic") or {}
+        return ReconnectConfig(
+            signal_loss_enabled=bool(signal_loss.get("enabled", True)),
+            signal_loss_frame_timeout_seconds=max(1, int(signal_loss.get("frame_timeout_seconds", 5))),
+            signal_loss_retry_interval_seconds=max(1, int(signal_loss.get("retry_interval_seconds", 5))),
+            periodic_enabled=bool(periodic.get("enabled", False)),
+            periodic_interval_minutes=max(1, int(periodic.get("interval_minutes", 60))),
+        )
+
+    def get_reconnect_config(self) -> ReconnectConfig:
+        with self._lock:
+            return self._reconnect_config
+
+    def update_reconnect_settings(self, reconnect_settings: Dict[str, Any]) -> None:
+        with self._lock:
+            self._reconnect_config = self._build_reconnect_config(reconnect_settings)
+
+    @staticmethod
+    def _open_capture(source: str) -> cv2.VideoCapture:
+        return cv2.VideoCapture(source)
+
+    @staticmethod
+    def _configure_capture_timeouts(cap: cv2.VideoCapture, reconnect_config: ReconnectConfig) -> None:
+        if not reconnect_config.signal_loss_enabled:
+            return
+        read_timeout_ms = int(max(1, reconnect_config.signal_loss_frame_timeout_seconds) * 1000)
+        open_timeout_ms = min(read_timeout_ms, 10_000)
+        cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, open_timeout_ms)
+        cap.set(cv2.CAP_PROP_READ_TIMEOUT_MSEC, read_timeout_ms)
+
+    def _reopen_capture(
+        self,
+        *,
+        channel_id: int,
+        source: str,
+        stop_event: threading.Event,
+        metrics: ChannelMetrics,
+        cap: Optional[cv2.VideoCapture],
+        reason: str,
+        retry_interval_seconds: int,
+        reconnect_config: ReconnectConfig,
+    ) -> Optional[cv2.VideoCapture]:
+        metrics.reconnect_count += 1
+        metrics.state = "reconnecting"
+        metrics.preview_ready = False
+        metrics.last_error = reason
+        if cap is not None:
+            cap.release()
+        logger.warning("Канал %s: reconnect (%s)", channel_id, reason)
+        if retry_interval_seconds > 0 and stop_event.wait(float(retry_interval_seconds)):
+            return None
+        reopened = self._open_capture(source)
+        self._configure_capture_timeouts(reopened, reconnect_config)
+        if not reopened.isOpened():
+            reopened.release()
+            metrics.last_error = f"reopen failure ({reason})"
+            logger.error("Канал %s: не удалось переподключить источник (%s)", channel_id, reason)
+            return None
+        metrics.state = "running"
+        metrics.last_error = None
+        logger.info("Канал %s: поток восстановлен (%s)", channel_id, reason)
+        return reopened
 
     def list_states(self) -> Dict[int, ChannelMetrics]:
         with self._lock:
@@ -222,7 +308,10 @@ class ChannelProcessor:
                     detector_frame_stride,
                 )
 
-            cap = cv2.VideoCapture(str(channel.get("source", "0")))
+            reconnect_config = self.get_reconnect_config()
+            source = str(channel.get("source", "0"))
+            cap = self._open_capture(source)
+            self._configure_capture_timeouts(cap, reconnect_config)
             if not cap.isOpened():
                 raise RuntimeError(f"Не удалось открыть источник {channel.get('source')}")
 
@@ -231,19 +320,85 @@ class ChannelProcessor:
             window_start = time.monotonic()
             preview_interval_s = 0.2
             last_preview_encode_at = 0.0
+            last_frame_at = time.monotonic()
+            periodic_reconnect_at = (
+                time.monotonic() + reconnect_config.periodic_interval_seconds
+                if reconnect_config.periodic_enabled
+                else None
+            )
             while not stop_event.is_set():
-                started = time.monotonic()
-                ok, frame = cap.read()
-                if not ok:
-                    metrics.timeout_count += 1
-                    metrics.reconnect_count += 1
-                    metrics.preview_ready = False
-                    cap.release()
-                    time.sleep(1)
-                    cap = cv2.VideoCapture(str(channel.get("source", "0")))
+                reconnect_config = self.get_reconnect_config()
+                now_monotonic = time.monotonic()
+                if reconnect_config.periodic_enabled:
+                    if periodic_reconnect_at is None:
+                        periodic_reconnect_at = now_monotonic + reconnect_config.periodic_interval_seconds
+                else:
+                    periodic_reconnect_at = None
+                if (
+                    reconnect_config.periodic_enabled
+                    and periodic_reconnect_at is not None
+                    and now_monotonic >= periodic_reconnect_at
+                ):
+                    periodic_retry_seconds = reconnect_config.signal_loss_retry_interval_seconds
+                    reopened = self._reopen_capture(
+                        channel_id=channel_id,
+                        source=source,
+                        stop_event=stop_event,
+                        metrics=metrics,
+                        cap=cap,
+                        reason="periodic reconnect",
+                        retry_interval_seconds=periodic_retry_seconds,
+                        reconnect_config=reconnect_config,
+                    )
+                    if stop_event.is_set():
+                        break
+                    if reopened is None:
+                        periodic_reconnect_at = time.monotonic() + periodic_retry_seconds
+                        continue
+                    cap = reopened
+                    last_frame_at = time.monotonic()
+                    periodic_reconnect_at = time.monotonic() + reconnect_config.periodic_interval_seconds
                     continue
 
-                now_monotonic = time.monotonic()
+                started = time.monotonic()
+                ok, frame = cap.read()
+                read_finished_at = time.monotonic()
+                read_elapsed = read_finished_at - started
+                if not ok:
+                    timeout_by_signal_loss = (
+                        reconnect_config.signal_loss_enabled
+                        and (read_elapsed >= reconnect_config.signal_loss_frame_timeout_seconds
+                             or read_finished_at - last_frame_at > reconnect_config.signal_loss_frame_timeout_seconds)
+                    )
+                    if timeout_by_signal_loss:
+                        metrics.timeout_count += 1
+                        reconnect_reason = "frame timeout / signal loss"
+                    else:
+                        reconnect_reason = "read failure"
+                    reopened = self._reopen_capture(
+                        channel_id=channel_id,
+                        source=source,
+                        stop_event=stop_event,
+                        metrics=metrics,
+                        cap=cap,
+                        reason=reconnect_reason,
+                        retry_interval_seconds=reconnect_config.signal_loss_retry_interval_seconds,
+                        reconnect_config=reconnect_config,
+                    )
+                    if stop_event.is_set():
+                        break
+                    if reopened is None:
+                        continue
+                    cap = reopened
+                    last_frame_at = time.monotonic()
+                    if reconnect_config.periodic_enabled:
+                        periodic_reconnect_at = time.monotonic() + reconnect_config.periodic_interval_seconds
+                    else:
+                        periodic_reconnect_at = None
+                    continue
+
+                now_monotonic = read_finished_at
+                last_frame_at = now_monotonic
                 if now_monotonic - last_preview_encode_at >= preview_interval_s:
                     ok_enc, preview_buf = cv2.imencode('.jpg', frame, [int(cv2.IMWRITE_JPEG_QUALITY), 80])
                     if ok_enc:

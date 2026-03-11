@@ -362,10 +362,13 @@ flowchart TD
 
 Поток канала открывает источник через `cv2.VideoCapture(source)` и в цикле вызывает `cap.read()`.
 
-Если чтение кадра не удалось:
-- увеличиваются `timeout_count` и `reconnect_count`;
-- preview помечается как недоступный;
-- источник открывается заново.
+Переподключение управляется глобальным блоком `reconnect` из настроек:
+- `reconnect.signal_loss.enabled` включает/отключает контроль таймаута чтения кадра и времени с последнего валидного кадра (при `false` timeout-watchdog не применяется);
+- при таймауте `reconnect.signal_loss.frame_timeout_seconds` увеличивается `timeout_count` и выполняется controlled reconnect;
+- пауза между попытками при потере сигнала/ошибке чтения берётся из `reconnect.signal_loss.retry_interval_seconds`;
+- `reconnect.periodic.enabled` включает принудительный reconnect каждые `reconnect.periodic.interval_minutes` независимо от signal-loss сценария; при неудачном periodic reopen повтор выполняется с паузой `reconnect.signal_loss.retry_interval_seconds`.
+
+При любой реальной попытке reconnect увеличивается `reconnect_count`, предыдущий `VideoCapture` освобождается, а после восстановления поток снова отдаёт preview без ручного обновления страницы.
 
 ### 3. Формирование preview
 

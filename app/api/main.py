@@ -285,6 +285,7 @@ def _create_processor() -> ChannelProcessor:
         event_callback=_publish_event_sync,
         plate_settings=settings.get_plate_settings(),
         storage_settings=settings.get_storage_settings(),
+        reconnect_settings=settings.get_reconnect(),
     )
 
 
@@ -850,7 +851,12 @@ def get_global_settings() -> Dict[str, Any]:
 def put_global_settings(payload: GlobalSettingsPayload) -> Dict[str, Any]:
     settings.save_grid(payload.grid)
     settings.save_theme(payload.theme)
-    settings.save_reconnect(payload.reconnect.model_dump())
+    reconnect_config = payload.reconnect.model_dump()
+    settings.save_reconnect(reconnect_config)
+    try:
+        processor.update_reconnect_settings(reconnect_config)
+    except Exception:
+        logger.exception("Не удалось обновить reconnect-настройки активного processor")
     settings.save_storage_settings(payload.storage.model_dump())
     settings.save_time_settings(payload.time.model_dump())
     settings.save_plate_settings(payload.plates.model_dump())
