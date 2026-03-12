@@ -231,6 +231,18 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+.obs-debug-panel {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: rgba(14,16,22,0.62);
+  display: flex;
+  flex-direction: column;
+  min-height: 120px;
+  max-height: 260px;
+}
+.obs-log-output { height: auto; flex: 1; min-height: 90px; }
+.log-meta { color: var(--text3); margin-right: 6px; }
 .obs-right { width: 270px; border-left: 1px solid var(--border); background: rgba(14,16,22,0.62); display: flex; flex-direction: column; }
 .panel-header { font-size: 10px; color: var(--text2); padding: 10px 12px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
 .event-feed { flex: 1; overflow: hidden; padding: 7px; display: flex; flex-direction: column; gap: 6px; }

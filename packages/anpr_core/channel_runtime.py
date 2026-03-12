@@ -12,6 +12,7 @@ import cv2
 import numpy as np
 
 from common.logging import get_logger
+from packages.anpr_core.debug import DebugOverlayRenderer, DebugRegistry
 from packages.anpr_core.event_sink import EventSink
 
 logger = get_logger(__name__)
@@ -33,6 +34,8 @@ class ChannelMetrics:
     motion_skipped_frames: int = 0
     detector_skipped_frames: int = 0
     motion_active: bool = False
+    empty_frames: int = 0
+    failed_frames: int = 0
 
 
 @dataclass
@@ -65,6 +68,7 @@ class ChannelProcessor:
         plate_settings: Dict[str, Any] | None = None,
         storage_settings: Dict[str, Any] | None = None,
         reconnect_settings: Dict[str, Any] | None = None,
+        debug_registry: DebugRegistry | None = None,
     ) -> None:
         self._event_callback = event_callback
         self._contexts: Dict[int, ChannelContext] = {}
@@ -73,6 +77,8 @@ class ChannelProcessor:
         self._sink = EventSink(postgres_dsn=str(self._storage_settings.get("postgres_dsn", "")))
         self._plate_settings = plate_settings or {}
         self._reconnect_config = self._build_reconnect_config(reconnect_settings or {})
+        self._debug_registry = debug_registry or DebugRegistry()
+        self._debug_renderer = DebugOverlayRenderer()
         screenshots_dir = str(self._storage_settings.get("screenshots_dir", "data/screenshots")).strip() or "data/screenshots"
         self._screenshots_dir = Path(screenshots_dir).expanduser().resolve()
         self._screenshots_dir.mkdir(parents=True, exist_ok=True)
@@ -147,6 +153,15 @@ class ChannelProcessor:
         with self._lock:
             return {cid: ctx.metrics for cid, ctx in self._contexts.items()}
 
+    def get_debug_settings(self) -> Dict[str, bool]:
+        return self._debug_registry.get_settings().to_dict()
+
+    def update_debug_settings(self, debug_settings: Dict[str, Any]) -> Dict[str, bool]:
+        return self._debug_registry.update_settings(debug_settings).to_dict()
+
+    def list_debug_states(self) -> Dict[int, Dict[str, Any]]:
+        return self._debug_registry.list_channel_states()
+
     def get_preview_frame(self, channel_id: int) -> tuple[Optional[bytes], float]:
         with self._lock:
             ctx = self._contexts.get(channel_id)
@@ -161,11 +176,13 @@ class ChannelProcessor:
                 self._contexts[channel_id] = ChannelContext(channel=channel)
             else:
                 self._contexts[channel_id].channel = channel
+        self._debug_registry.ensure_channel_state(channel_id)
 
     def remove_channel(self, channel_id: int) -> None:
         self.stop(channel_id)
         with self._lock:
             self._contexts.pop(channel_id, None)
+        self._debug_registry.remove_channel_state(channel_id)
 
     def start(self, channel_id: int) -> None:
         with self._lock:
@@ -318,8 +335,6 @@ class ChannelProcessor:
             frames = 0
             detector_input_frames = 0
             window_start = time.monotonic()
-            preview_interval_s = 0.2
-            last_preview_encode_at = 0.0
             last_frame_at = time.monotonic()
             periodic_reconnect_at = (
                 time.monotonic() + reconnect_config.periodic_interval_seconds
@@ -365,6 +380,8 @@ class ChannelProcessor:
                 read_finished_at = time.monotonic()
                 read_elapsed = read_finished_at - started
                 if not ok:
+                    metrics.failed_frames += 1
+                    self._debug_registry.cleanup_stale(channel_id)
                     timeout_by_signal_loss = (
                         reconnect_config.signal_loss_enabled
                         and (read_elapsed >= reconnect_config.signal_loss_frame_timeout_seconds
@@ -397,89 +414,106 @@ class ChannelProcessor:
                         periodic_reconnect_at = None
                     continue
 
+                if frame is None or getattr(frame, "size", 0) == 0:
+                    metrics.empty_frames += 1
+                    self._debug_registry.cleanup_stale(channel_id)
+                    continue
+
                 now_monotonic = read_finished_at
                 last_frame_at = now_monotonic
-                if now_monotonic - last_preview_encode_at >= preview_interval_s:
-                    ok_enc, preview_buf = cv2.imencode('.jpg', frame, [int(cv2.IMWRITE_JPEG_QUALITY), 80])
-                    if ok_enc:
-                        now_ts = time.time()
-                        with self._lock:
-                            channel_ctx = self._contexts.get(channel_id)
-                            if channel_ctx:
-                                channel_ctx.latest_jpeg = preview_buf.tobytes()
-                                channel_ctx.latest_frame_ts = now_ts
-                        metrics.preview_ready = True
-                        metrics.preview_last_frame_at = datetime.now(timezone.utc).isoformat()
-                        last_preview_encode_at = now_monotonic
+                self._debug_registry.cleanup_stale(channel_id)
 
                 motion_active = True
+                should_process = True
                 if motion_detector is not None:
                     motion_active = bool(motion_detector.update(frame))
                     metrics.motion_active = motion_active
                     if not motion_active:
                         metrics.motion_skipped_frames += 1
-                        frames += 1
-                        elapsed = time.monotonic() - window_start
-                        if elapsed >= 1.0:
-                            metrics.fps = frames / elapsed
-                            frames = 0
-                            window_start = time.monotonic()
-                        metrics.latency_ms = (time.monotonic() - started) * 1000.0
-                        continue
+                        should_process = False
 
-                detector_input_frames += 1
-                if detector_input_frames % detector_frame_stride != 0:
-                    metrics.detector_skipped_frames += 1
-                    frames += 1
-                    elapsed = time.monotonic() - window_start
-                    if elapsed >= 1.0:
-                        metrics.fps = frames / elapsed
-                        frames = 0
-                        window_start = time.monotonic()
-                    metrics.latency_ms = (time.monotonic() - started) * 1000.0
-                    continue
+                if should_process:
+                    detector_input_frames += 1
+                    if detector_input_frames % detector_frame_stride != 0:
+                        metrics.detector_skipped_frames += 1
+                        should_process = False
 
-                detections = detector.track(frame)
-                results = pipeline.process_frame(frame, detections)
-                metrics.processed_frames += 1
-                for detection in results:
-                    plate = detection.get("text")
-                    if not plate:
-                        continue
-                    event_ts = datetime.now(timezone.utc)
-                    frame_file, plate_file = self._build_event_media_paths(event_ts=event_ts, channel_id=channel_id, plate=plate)
-                    frame_path = self._save_jpeg(frame_file, frame)
-                    plate_crop = self._extract_plate_crop(frame, detection)
-                    plate_path = self._save_jpeg(plate_file, plate_crop)
-                    event = {
-                        "timestamp": event_ts.isoformat(),
-                        "channel": channel.get("name", f"Канал {channel_id}"),
-                        "channel_id": channel_id,
-                        "plate": plate,
-                        "country": detection.get("country"),
-                        "confidence": float(detection.get("confidence", 0.0)),
-                        "source": str(channel.get("source", "")),
-                        "frame_path": frame_path,
-                        "plate_path": plate_path,
-                        "direction": detection.get("direction", "UNKNOWN"),
-                    }
-                    self._sink.insert_event(**{
-                        k: event[k]
-                        for k in (
-                            "channel",
-                            "plate",
-                            "channel_id",
-                            "country",
-                            "confidence",
-                            "source",
-                            "timestamp",
-                            "frame_path",
-                            "plate_path",
-                            "direction",
-                        )
-                    })
-                    self._event_callback(event)
-                    metrics.last_event_at = event["timestamp"]
+                if should_process:
+                    detection_started = time.monotonic()
+                    detections = detector.track(frame)
+                    detection_ms = (time.monotonic() - detection_started) * 1000.0
+                    self._debug_registry.update_from_detections(channel_id, detections)
+                    ocr_started = time.monotonic()
+                    results = pipeline.process_frame(frame, detections)
+                    ocr_ms = (time.monotonic() - ocr_started) * 1000.0
+                    postprocess_started = time.monotonic()
+                    self._debug_registry.update_from_pipeline_results(channel_id, results)
+                    metrics.processed_frames += 1
+                    for detection in results:
+                        plate = detection.get("text")
+                        if not plate:
+                            continue
+                        event_ts = datetime.now(timezone.utc)
+                        frame_file, plate_file = self._build_event_media_paths(event_ts=event_ts, channel_id=channel_id, plate=plate)
+                        frame_path = self._save_jpeg(frame_file, frame)
+                        plate_crop = self._extract_plate_crop(frame, detection)
+                        plate_path = self._save_jpeg(plate_file, plate_crop)
+                        event = {
+                            "timestamp": event_ts.isoformat(),
+                            "channel": channel.get("name", f"Канал {channel_id}"),
+                            "channel_id": channel_id,
+                            "plate": plate,
+                            "country": detection.get("country"),
+                            "confidence": float(detection.get("confidence", 0.0)),
+                            "source": str(channel.get("source", "")),
+                            "frame_path": frame_path,
+                            "plate_path": plate_path,
+                            "direction": detection.get("direction", "UNKNOWN"),
+                        }
+                        self._sink.insert_event(**{
+                            k: event[k]
+                            for k in (
+                                "channel",
+                                "plate",
+                                "channel_id",
+                                "country",
+                                "confidence",
+                                "source",
+                                "timestamp",
+                                "frame_path",
+                                "plate_path",
+                                "direction",
+                            )
+                        })
+                        self._event_callback(event)
+                        metrics.last_event_at = event["timestamp"]
+                    postprocess_ms = (time.monotonic() - postprocess_started) * 1000.0
+                    self._debug_registry.update_stage_timings(
+                        channel_id,
+                        detection_ms=detection_ms,
+                        ocr_ms=ocr_ms,
+                        postprocess_ms=postprocess_ms,
+                    )
+
+                debug_settings = self._debug_registry.get_settings()
+                preview_source = frame
+                if debug_settings.overlay_enabled:
+                    preview_source = self._debug_renderer.render(
+                        frame,
+                        settings=debug_settings,
+                        state=self._debug_registry.get_channel_state_snapshot(channel_id),
+                        metrics=metrics,
+                    )
+                ok_enc, preview_buf = cv2.imencode('.jpg', preview_source, [int(cv2.IMWRITE_JPEG_QUALITY), 80])
+                if ok_enc:
+                    now_ts = time.time()
+                    with self._lock:
+                        channel_ctx = self._contexts.get(channel_id)
+                        if channel_ctx:
+                            channel_ctx.latest_jpeg = preview_buf.tobytes()
+                            channel_ctx.latest_frame_ts = now_ts
+                    metrics.preview_ready = True
+                    metrics.preview_last_frame_at = datetime.now(timezone.utc).isoformat()
                 frames += 1
                 elapsed = time.monotonic() - window_start
                 if elapsed >= 1.0:
