@@ -653,6 +653,26 @@ async function saveGeneral() {
   addDebug("[OK] global settings saved", "ok");
 }
 
+async function saveDebugSettings() {
+  const payload = {
+    overlay_enabled: Boolean((debugSettingsCache || {}).overlay_enabled ?? true),
+    show_detection_boxes: document.getElementById("d_boxes").checked,
+    show_ocr_text: document.getElementById("d_ocr").checked,
+    show_direction_tracks: document.getElementById("d_tracks").checked,
+    show_channel_metrics: document.getElementById("d_metrics").checked,
+    log_panel_enabled: document.getElementById("d_log").checked,
+  };
+  try {
+    const updated = await jfetch(api("/api/debug/settings"), "PUT", payload);
+    debugSettingsCache = updated || payload;
+    applyDebugPanelVisibility();
+    addDebug("[OK] debug settings saved", "ok");
+  } catch (err) {
+    addDebug(`[ERR] ${err.message}`, "err");
+    alert(`Не удалось сохранить debug: ${err.message}`);
+  }
+}
+
 function renderChannelsList() {
   const box = document.getElementById("channelsList");
   box.innerHTML = "";
@@ -1503,6 +1523,7 @@ document.getElementById("eventModal").onclick = (e) => {
   if (e.target.id === "eventModal") closeEventModal();
 };
 document.getElementById("saveGeneralBtn").onclick = saveGeneral;
+document.getElementById("saveDebugBtn").onclick = saveDebugSettings;
 document.getElementById("saveChannelBtn").onclick = saveChannel;
 document.getElementById("deleteChannelBtn").onclick = deleteChannel;
 document.getElementById("createChannelBtn").onclick = createChannel;
