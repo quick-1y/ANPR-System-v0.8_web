@@ -240,9 +240,6 @@ class PlatesPayload(BaseModel):
 
 
 class DebugPayload(BaseModel):
-    show_detection_boxes: bool = False
-    show_ocr_text: bool = False
-    show_direction_tracks: bool = False
     show_channel_metrics: bool = True
     log_panel_enabled: bool = False
 

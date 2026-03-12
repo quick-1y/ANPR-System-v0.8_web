@@ -11,6 +11,7 @@ let debugLogSource = null;
 let debugLogReconnectTimer = null;
 let lastDebugLogId = 0;
 let debugSettingsCache = null;
+let overlayRefreshTimer = null;
 function api(path) {
   return `${document.getElementById("apiBase").value.trim()}${path}`;
 }
@@ -226,6 +227,167 @@ function ensurePreviewStream(img, channelId) {
   }
 }
 
+
+function normalizeDirectionCode(direction) {
+  const value = String(direction || "").trim().toUpperCase();
+  return (!value || value === "UNKNOWN") ? "" : value;
+}
+
+function getPreviewDisplayRect(cell, overlayData) {
+  const wrapper = cell.querySelector(".cam-media-wrapper");
+  const preview = cell.querySelector(".cam-preview");
+  if (!wrapper || !preview) return null;
+  const wrapperW = wrapper.clientWidth;
+  const wrapperH = wrapper.clientHeight;
+  if (wrapperW <= 0 || wrapperH <= 0) return null;
+
+  const frameSize = overlayData.frame_size || {};
+  const frameW = Number(frameSize.width) || Number(preview.naturalWidth) || 0;
+  const frameH = Number(frameSize.height) || Number(preview.naturalHeight) || 0;
+  if (frameW <= 0 || frameH <= 0) {
+    return { x: 0, y: 0, width: wrapperW, height: wrapperH };
+  }
+
+  const frameAspect = frameW / frameH;
+  const wrapperAspect = wrapperW / wrapperH;
+  let width = wrapperW;
+  let height = wrapperH;
+  if (frameAspect > wrapperAspect) {
+    height = Math.round(wrapperW / frameAspect);
+  } else {
+    width = Math.round(wrapperH * frameAspect);
+  }
+  return {
+    x: Math.floor((wrapperW - width) / 2),
+    y: Math.floor((wrapperH - height) / 2),
+    width,
+    height,
+  };
+}
+
+
+function refreshVideoCellOverlayState(cell, ch) {
+  if (!cell || !ch) return;
+  const statusText = statusTextForChannel(ch);
+  cell.dataset.statusText = statusText;
+  const hasPreviewSignal = getCellPreviewSignal(cell, ch);
+  const statusDot = cell.querySelector(".cam-status");
+  if (statusDot) {
+    statusDot.classList.toggle("live", hasPreviewSignal);
+    statusDot.classList.toggle("off", !hasPreviewSignal);
+  }
+  setNoSignalVisibility(cell, !hasPreviewSignal, statusText);
+  renderDebugOverlay(cell, ch);
+}
+
+async function refreshOverlayStates() {
+  try {
+    const payload = await jfetch(api("/api/debug/channels"));
+    const channels = Array.isArray(payload.channels) ? payload.channels : [];
+    const byId = new Map(channels.map((row) => [Number(row.channel_id), row]));
+    state.channels.forEach((ch) => {
+      const row = byId.get(Number(ch.id));
+      if (!row) return;
+      if (row.metrics) ch.metrics = row.metrics;
+      if (row.debug_state) ch.debug_state = row.debug_state;
+      const cell = document.querySelector(`.video-cell[data-channel-id='${ch.id}']`);
+      if (cell) refreshVideoCellOverlayState(cell, ch);
+    });
+  } catch (_e) {}
+}
+
+function renderDebugOverlay(cell, ch) {
+  if (!cell || !ch) return;
+  const state = ch.debug_state || {};
+  const overlayData = state.overlay || {};
+  const bbox = Array.isArray(overlayData.bbox_norm) ? overlayData.bbox_norm : null;
+  const overlayLayer = cell.querySelector(".cam-overlay-layer");
+  if (!overlayLayer) return;
+  const box = overlayLayer.querySelector(".cam-detection-box");
+  const ocrEl = overlayLayer.querySelector(".cam-ocr-label");
+  const dirEl = overlayLayer.querySelector(".cam-direction-label");
+  if (!box || !ocrEl || !dirEl) return;
+
+  const displayRect = getPreviewDisplayRect(cell, overlayData);
+  if (!bbox || bbox.length < 4 || !displayRect) {
+    box.style.display = "none";
+    ocrEl.style.display = "none";
+    dirEl.style.display = "none";
+  } else {
+    const [x1, y1, x2, y2] = bbox.map((v) => Math.max(0, Math.min(1, Number(v) || 0)));
+    const boxW = Math.max(0, x2 - x1) * displayRect.width;
+    const boxH = Math.max(0, y2 - y1) * displayRect.height;
+    if (boxW <= 0 || boxH <= 0) {
+      box.style.display = "none";
+      ocrEl.style.display = "none";
+      dirEl.style.display = "none";
+    } else {
+      const left = displayRect.x + x1 * displayRect.width;
+      const top = displayRect.y + y1 * displayRect.height;
+      box.style.display = "block";
+      box.style.left = `${left}px`;
+      box.style.top = `${top}px`;
+      box.style.width = `${boxW}px`;
+      box.style.height = `${boxH}px`;
+
+      const ocrText = String(overlayData.ocr_text || "").trim();
+      const directionCode = normalizeDirectionCode(overlayData.direction);
+      const labelGap = 4;
+      const ocrHeight = 22;
+      const dirHeight = 20;
+      const hasSpaceAbove = top >= (ocrHeight + labelGap + 2);
+      const ocrTop = hasSpaceAbove ? -(ocrHeight + labelGap) : (boxH + labelGap);
+      const dirTop = hasSpaceAbove ? (boxH + labelGap) : (boxH + labelGap + ocrHeight + labelGap);
+
+      if (ocrText) {
+        ocrEl.textContent = ocrText;
+        ocrEl.style.display = "block";
+        ocrEl.style.top = `${ocrTop}px`;
+      } else {
+        ocrEl.style.display = "none";
+      }
+
+      if (directionCode) {
+        dirEl.textContent = formatDirection(directionCode).plain;
+        dirEl.style.display = "block";
+        dirEl.style.top = `${dirTop}px`;
+      } else {
+        dirEl.style.display = "none";
+      }
+
+      const maxBottom = displayRect.y + displayRect.height;
+      const directionBottom = top + dirTop + dirHeight;
+      if (directionBottom > maxBottom && dirEl.style.display !== "none") {
+        dirEl.style.top = `${Math.max(boxH + 2, boxH - dirHeight)}px`;
+      }
+    }
+  }
+
+  const metricsWidget = cell.querySelector(".cam-metrics-widget");
+  if (!metricsWidget) return;
+  const showMetrics = Boolean((debugSettingsCache || {}).show_channel_metrics);
+  metricsWidget.style.display = showMetrics ? "grid" : "none";
+  if (!showMetrics) return;
+  const metrics = ch.metrics || {};
+  const timings = (state.stage_timings || {});
+  const compact = cell.clientWidth < 360 || cell.clientHeight < 230;
+  const tiny = cell.clientWidth < 250 || cell.clientHeight < 170;
+  const primaryRows = [
+    `State: ${metrics.state || "unknown"}`,
+    `FPS: ${(Number(metrics.fps) || 0).toFixed(2)} · Lat: ${(Number(metrics.latency_ms) || 0).toFixed(1)}ms`,
+    `Rec/TO: ${(Number(metrics.reconnect_count) || 0)}/${(Number(metrics.timeout_count) || 0)}`,
+  ];
+  const secondaryRows = [
+    `Empty/Fail: ${(Number(metrics.empty_frames) || 0)}/${(Number(metrics.failed_frames) || 0)}`,
+    `Skip D/M: ${(Number(metrics.detector_skipped_frames) || 0)}/${(Number(metrics.motion_skipped_frames) || 0)}`,
+    `D/O/P: ${(Number(timings.detection_ms) || 0).toFixed(1)}/${(Number(timings.ocr_ms) || 0).toFixed(1)}/${(Number(timings.postprocess_ms) || 0).toFixed(1)}ms`,
+  ];
+  metricsWidget.classList.toggle("compact", compact);
+  metricsWidget.classList.toggle("tiny", tiny);
+  const rows = tiny ? primaryRows.slice(0, 2) : (compact ? primaryRows : primaryRows.concat(secondaryRows));
+  metricsWidget.innerHTML = rows.map((row) => `<div>${row}</div>`).join("");
+}
+
 function createVideoCell(ch, idx) {
   const statusText = statusTextForChannel(ch);
   const cell = document.createElement("div");
@@ -233,7 +395,21 @@ function createVideoCell(ch, idx) {
   cell.dataset.channelId = String(ch.id);
   cell.dataset.previewLoaded = "0";
   cell.dataset.statusText = statusText;
-  cell.innerHTML = `<div class='video-cell-bg'></div><img class='cam-preview' id='v-${ch.id}' alt='preview CAM-${ch.id}' /><div class='cam-label'>${ch.name}</div><div class='cam-status off'></div><div class='cam-plate' id='plate-${ch.id}'></div>`;
+  cell.innerHTML = `
+    <div class='video-cell-bg'></div>
+    <div class='cam-media-wrapper'>
+      <img class='cam-preview' id='v-${ch.id}' alt='preview CAM-${ch.id}' />
+      <div class='cam-overlay-layer'>
+        <div class='cam-detection-box'>
+          <div class='cam-ocr-label'></div>
+          <div class='cam-direction-label'></div>
+        </div>
+      </div>
+    </div>
+    <div class='cam-label'>${ch.name}</div>
+    <div class='cam-status off'></div>
+    <div class='cam-metrics-widget'></div>
+    <div class='cam-plate' id='plate-${ch.id}'></div>`;
   const preview = cell.querySelector(".cam-preview");
   bindPreviewLifecycle(cell, preview);
   ensureNoSignalOverlay(cell);
@@ -245,6 +421,7 @@ function createVideoCell(ch, idx) {
     statusDot.classList.toggle("off", !hasPreviewSignal);
   }
   ensurePreviewStream(preview, ch.id);
+  refreshVideoCellOverlayState(cell, ch);
   updateChannelLastPlate(ch.id, state.lastPlatesByChannelId[ch.id]);
   return cell;
 }
@@ -265,6 +442,7 @@ function updateVideoCell(cell, ch, idx) {
   const preview = cell.querySelector(".cam-preview");
   bindPreviewLifecycle(cell, preview);
   ensurePreviewStream(preview, ch.id);
+  refreshVideoCellOverlayState(cell, ch);
   updateChannelLastPlate(ch.id, state.lastPlatesByChannelId[ch.id]);
 }
 
@@ -273,18 +451,7 @@ function computeVideoGridRowHeight(grid, rows, cols) {
   const style = window.getComputedStyle(grid);
   const gap = Number.parseFloat(style.rowGap || style.gap || "0") || 0;
   const width = grid.clientWidth;
-  const rawHeight = grid.clientHeight;
-  const obsLeft = grid.closest(".obs-left");
-  const obsTab = grid.closest("#tab-obs");
-  const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
-  const measuredHeights = [
-    rawHeight,
-    obsLeft ? obsLeft.clientHeight : 0,
-    obsTab ? obsTab.clientHeight : 0,
-    viewportHeight,
-  ].filter((v) => Number.isFinite(v) && v > 0);
-  const height = measuredHeights.length ? Math.min(...measuredHeights) : 0;
-
+  const height = grid.clientHeight;
   if (width <= 0 || height <= 0) return null;
 
   const availableWidth = width - gap * (cols - 1);
@@ -331,14 +498,21 @@ function renderVideoGrid() {
 }
 
 let videoGridLayoutFrame = null;
+let videoGridSecondPassFrame = null;
 let videoGridResizeObserver = null;
-function scheduleVideoGridLayout() {
+function scheduleVideoGridLayout(secondPass = false) {
   if (videoGridLayoutFrame !== null) return;
   videoGridLayoutFrame = requestAnimationFrame(() => {
     videoGridLayoutFrame = null;
     const obsTab = document.getElementById("tab-obs");
     if (!obsTab || !obsTab.classList.contains("active")) return;
     renderVideoGrid();
+    if (secondPass && videoGridSecondPassFrame === null) {
+      videoGridSecondPassFrame = requestAnimationFrame(() => {
+        videoGridSecondPassFrame = null;
+        renderVideoGrid();
+      });
+    }
   });
 }
 
@@ -352,7 +526,7 @@ function setupVideoGridLayoutGuards() {
   const grid = document.getElementById("videoGrid");
   if (!obsLeft && !grid) return;
   videoGridResizeObserver = new ResizeObserver(() => {
-    scheduleVideoGridLayout();
+    scheduleVideoGridLayout(true);
   });
   if (obsLeft) videoGridResizeObserver.observe(obsLeft);
   if (grid) videoGridResizeObserver.observe(grid);
@@ -602,9 +776,6 @@ async function loadGlobalSettings() {
   setVal("g_offset_minutes", g.time.offset_minutes);
   setVal("g_plates_dir", g.plates.config_dir);
   setVal("g_countries", (g.plates.enabled_countries || []).join(","));
-  setChk("d_boxes", g.debug.show_detection_boxes);
-  setChk("d_ocr", g.debug.show_ocr_text);
-  setChk("d_tracks", g.debug.show_direction_tracks);
   setChk("d_metrics", g.debug.show_channel_metrics);
   setChk("d_log", g.debug.log_panel_enabled);
   debugSettingsCache = g.debug || {};
@@ -656,9 +827,6 @@ async function saveGeneral() {
             .filter(Boolean),
     },
     debug: {
-      show_detection_boxes: document.getElementById("d_boxes").checked,
-      show_ocr_text: document.getElementById("d_ocr").checked,
-      show_direction_tracks: document.getElementById("d_tracks").checked,
       show_channel_metrics: document.getElementById("d_metrics").checked,
       log_panel_enabled: document.getElementById("d_log").checked,
     },
@@ -666,6 +834,7 @@ async function saveGeneral() {
   const updated = await jfetch(api("/api/settings"), "PUT", payload);
   debugSettingsCache = (updated || {}).debug || payload.debug;
   applyDebugPanelVisibility();
+  scheduleVideoGridLayout(true);
   addDebug("[OK] global settings saved", "ok");
 }
 
@@ -1293,7 +1462,7 @@ function applyDebugPanelVisibility() {
   if (!panel) return;
   const enabled = Boolean((debugSettingsCache || {}).log_panel_enabled);
   panel.style.display = enabled ? "flex" : "none";
-  scheduleVideoGridLayout();
+  scheduleVideoGridLayout(true);
   if (!enabled) return;
   if (!panel.dataset.collapsed) panel.dataset.collapsed = "0";
   if (btn) {
@@ -1448,7 +1617,7 @@ if (toggleDebugPanelBtn) {
     const collapsed = panel.dataset.collapsed === "1";
     panel.dataset.collapsed = collapsed ? "0" : "1";
     toggleDebugPanelBtn.textContent = collapsed ? "Свернуть" : "Развернуть";
-    scheduleVideoGridLayout();
+    scheduleVideoGridLayout(true);
   };
 }
 
@@ -1463,7 +1632,7 @@ document
   .forEach(
     (el) => (el.onclick = () => switchChannelSettingsTab(el.dataset.chTab)),
   );
-document.getElementById("gridSelect").onchange = renderVideoGrid;
+document.getElementById("gridSelect").onchange = () => scheduleVideoGridLayout(true);
 document.getElementById("btnFind").onclick = renderJournal;
 document.getElementById("btnReset").onclick = () => {
   document.getElementById("fltPlate").value = "";
@@ -1549,6 +1718,10 @@ window.addEventListener("beforeunload", () => {
     } catch (_e) {}
     debugLogSource = null;
   }
+  if (overlayRefreshTimer) {
+    clearInterval(overlayRefreshTimer);
+    overlayRefreshTimer = null;
+  }
 });
 window.addEventListener("pagehide", () => {
   if (eventSource) {
@@ -1562,6 +1735,10 @@ window.addEventListener("pagehide", () => {
       debugLogSource.close();
     } catch (_e) {}
     debugLogSource = null;
+  }
+  if (overlayRefreshTimer) {
+    clearInterval(overlayRefreshTimer);
+    overlayRefreshTimer = null;
   }
 });
 window.addEventListener("resize", renderEventFeed);
@@ -1583,10 +1760,12 @@ window.addEventListener("resize", renderEventFeed);
   await loadJournal();
   await loadLists();
   await loadGlobalSettings();
+  await refreshOverlayStates();
   await loadDebugLogHistory();
   setupDebugLogStream();
   await loadControllers();
   setupStream();
   addDebug("[INFO] UI initialized");
   setInterval(refreshChannels, 8000);
+  overlayRefreshTimer = setInterval(refreshOverlayStates, 700);
 })();

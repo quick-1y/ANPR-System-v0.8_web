@@ -16,9 +16,6 @@ inference:
   workers: 2
   shared_memory: true
 debug:
-  show_detection_boxes: false
-  show_ocr_text: false
-  show_direction_tracks: false
   show_channel_metrics: true
   log_panel_enabled: false
 grid: 2x2

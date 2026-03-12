@@ -134,9 +134,6 @@ def logging_defaults() -> Dict[str, Any]:
 
 def debug_defaults() -> Dict[str, Any]:
     return {
-        "show_detection_boxes": False,
-        "show_ocr_text": False,
-        "show_direction_tracks": False,
         "show_channel_metrics": True,
         "log_panel_enabled": False,
     }
