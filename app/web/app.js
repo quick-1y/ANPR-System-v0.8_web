@@ -1277,12 +1277,32 @@ function applyDebugPanelVisibility() {
   if (!panel) return;
   const enabled = Boolean((debugSettingsCache || {}).log_panel_enabled);
   panel.style.display = enabled ? "flex" : "none";
+  if (enabled && panel.dataset.collapsed === "1") {
+    panel.dataset.collapsed = "0";
+  }
   scheduleVideoGridLayout();
+  syncDebugLogStream(enabled);
   if (!enabled) return;
   if (!panel.dataset.collapsed) panel.dataset.collapsed = "0";
   if (btn) {
     btn.textContent = panel.dataset.collapsed === "1" ? "Развернуть" : "Свернуть";
   }
+}
+
+function syncDebugLogStream(enabled) {
+  if (!enabled) {
+    if (debugLogReconnectTimer) {
+      clearTimeout(debugLogReconnectTimer);
+      debugLogReconnectTimer = null;
+    }
+    if (debugLogSource) {
+      try { debugLogSource.close(); } catch (_e) {}
+      debugLogSource = null;
+    }
+    return;
+  }
+  if (debugLogSource) return;
+  setupDebugLogStream();
 }
 
 function scheduleDebugLogReconnect(delayMs = 2000) {
@@ -1308,6 +1328,8 @@ async function loadDebugLogHistory() {
 }
 
 function setupDebugLogStream() {
+  const enabled = Boolean((debugSettingsCache || {}).log_panel_enabled);
+  if (!enabled) return;
   if (debugLogSource) {
     try { debugLogSource.close(); } catch (_e) {}
   }
@@ -1568,7 +1590,7 @@ window.addEventListener("resize", renderEventFeed);
   await loadLists();
   await loadGlobalSettings();
   await loadDebugLogHistory();
-  setupDebugLogStream();
+  syncDebugLogStream(Boolean((debugSettingsCache || {}).log_panel_enabled));
   await loadControllers();
   setupStream();
   addDebug("[INFO] UI initialized");

@@ -250,7 +250,11 @@ body {
 .obs-debug-panel[data-collapsed="1"] .obs-log-output {
   display: none;
 }
-.obs-log-output { height: auto; flex: 1; min-height: 90px; }
+.obs-log-output {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
 .log-meta { color: var(--text3); margin-right: 6px; }
 .obs-right { width: 270px; border-left: 1px solid var(--border); background: rgba(14,16,22,0.62); display: flex; flex-direction: column; }
 .panel-header { font-size: 10px; color: var(--text2); padding: 10px 12px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
@@ -445,8 +449,12 @@ textarea.s-input { min-height: 76px; height: auto; padding: 8px; }
   padding: 16px;
 }
 .log-output {
-  height: 250px; overflow-y: auto; border-radius: 8px; background: var(--field);
+  border-radius: 8px; background: var(--field);
   border: 1px solid var(--border); padding: 10px; font-family: var(--mono); font-size: 11px; color: var(--text2);
+}
+.settings-log-output {
+  height: 250px;
+  overflow-y: auto;
 }
 .log-line.warn { color: var(--warning); }
 .log-line.err { color: var(--danger); }
