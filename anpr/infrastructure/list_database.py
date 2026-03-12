@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import csv
-import os
 import threading
 from collections import OrderedDict
 from typing import Any, Dict, Iterable, Optional
@@ -84,13 +82,6 @@ class ListDatabase:
                     for row in cursor.fetchall()
                 ]
 
-    def get_list(self, list_id: int) -> Optional[Dict[str, Any]]:
-        self._ensure_schema()
-        with self._connect() as conn:
-            with conn.cursor() as cursor:
-                cursor.execute("SELECT id, name, type FROM plate_lists WHERE id = %s", (int(list_id),))
-                row = cursor.fetchone()
-        return {"id": row[0], "name": row[1], "type": row[2]} if row else None
 
     def create_list(self, name: str, list_type: str) -> int:
         self._ensure_schema()
@@ -103,21 +94,7 @@ class ListDatabase:
             conn.commit()
         return int(row[0]) if row else 0
 
-    def update_list(self, list_id: int, name: str, list_type: str) -> None:
-        self._ensure_schema()
-        list_type = list_type if list_type in LIST_TYPES else "white"
-        name = (name or "").strip() or "Новый список"
-        with self._connect() as conn:
-            with conn.cursor() as cursor:
-                cursor.execute("UPDATE plate_lists SET name = %s, type = %s WHERE id = %s", (name, list_type, int(list_id)))
-            conn.commit()
 
-    def delete_list(self, list_id: int) -> None:
-        self._ensure_schema()
-        with self._connect() as conn:
-            with conn.cursor() as cursor:
-                cursor.execute("DELETE FROM plate_lists WHERE id = %s", (int(list_id),))
-            conn.commit()
 
     def list_entries(self, list_id: int) -> list[Dict[str, Any]]:
         self._ensure_schema()
@@ -149,12 +126,6 @@ class ListDatabase:
             conn.commit()
         return int(row[0]) if row else None
 
-    def delete_entry(self, entry_id: int) -> None:
-        self._ensure_schema()
-        with self._connect() as conn:
-            with conn.cursor() as cursor:
-                cursor.execute("DELETE FROM plate_list_entries WHERE id = %s", (int(entry_id),))
-            conn.commit()
 
     def plate_in_list_type(self, plate: str, list_type: str) -> bool:
         self._ensure_schema()
@@ -188,18 +159,6 @@ class ListDatabase:
                 cursor.execute(query, [normalized, *ids])
                 return cursor.fetchone() is not None
 
-    def export_lists(self, path: str) -> None:
-        os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-        with open(path, "w", encoding="utf-8", newline="") as file:
-            writer = csv.writer(file, delimiter=";")
-            writer.writerow(["list_name", "list_type", "plate", "comment"])
-            for lst in self.list_lists():
-                entries = self.list_entries(int(lst["id"]))
-                if not entries:
-                    writer.writerow([lst.get("name") or "", lst.get("type") or "white", "", ""])
-                    continue
-                for entry in entries:
-                    writer.writerow([lst.get("name") or "", lst.get("type") or "white", entry.get("plate") or "", entry.get("comment") or ""])
 
 
 __all__ = ["ListDatabase", "LIST_TYPES", "normalize_plate"]

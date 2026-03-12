@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import threading
 from pathlib import Path
 from datetime import datetime, timezone
@@ -198,38 +197,4 @@ class PostgresEventDatabase:
             raise StorageUnavailableError(f"PostgreSQL недоступен: {exc}") from exc
 
 
-class AsyncEventDatabase:
-    """Асинхронный адаптер над PostgreSQL-only storage."""
-
-    def __init__(self, dsn: str) -> None:
-        self._sync_db = PostgresEventDatabase(dsn)
-
-    async def insert_event_async(
-        self,
-        channel: str,
-        plate: str,
-        channel_id: Optional[int] = None,
-        confidence: float = 0.0,
-        source: str = "",
-        timestamp: Optional[str] = None,
-        frame_path: Optional[str] = None,
-        plate_path: Optional[str] = None,
-        country: Optional[str] = None,
-        direction: Optional[str] = None,
-    ) -> int:
-        return await asyncio.to_thread(
-            self._sync_db.insert_event,
-            channel,
-            plate,
-            channel_id,
-            country,
-            confidence,
-            source,
-            timestamp,
-            frame_path,
-            plate_path,
-            direction,
-        )
-
-
-__all__ = ["PostgresEventDatabase", "AsyncEventDatabase", "StorageUnavailableError"]
+__all__ = ["PostgresEventDatabase", "StorageUnavailableError"]
