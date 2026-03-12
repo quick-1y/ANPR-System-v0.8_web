@@ -13,12 +13,13 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from anpr.infrastructure.list_database import ListDatabase
-from common.logging import configure_logging, get_logger
+from common.logging import configure_logging, get_live_log_bus, get_logger
 from anpr.infrastructure.settings_manager import SettingsManager
 from anpr.infrastructure.storage import PostgresEventDatabase, StorageUnavailableError
 from app.shared.data_lifecycle import DataLifecycleService, RetentionPolicy
 from controllers import ControllerAutomationService, ControllerService, SUPPORTED_CONTROLLER_TYPES
 from packages.anpr_core.channel_runtime import ChannelProcessor
+from packages.anpr_core.debug import DebugRegistry
 from packages.anpr_core.event_bus import EventBus
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -277,6 +278,8 @@ controller_automation = ControllerAutomationService(
     plate_in_lists=lists_db.plate_in_lists,
 )
 event_bus = EventBus()
+debug_registry = DebugRegistry(settings.get_debug_settings())
+debug_log_bus = get_live_log_bus()
 MAIN_LOOP: asyncio.AbstractEventLoop | None = None
 STREAM_SHUTDOWN = asyncio.Event()
 
@@ -287,6 +290,7 @@ def _create_processor() -> ChannelProcessor:
         plate_settings=settings.get_plate_settings(),
         storage_settings=settings.get_storage_settings(),
         reconnect_settings=settings.get_reconnect(),
+        debug_registry=debug_registry,
     )
 
 
@@ -443,10 +447,13 @@ def system_resources() -> Dict[str, float]:
 def list_channels() -> List[Dict[str, Any]]:
     channels = settings.get_channels()
     metrics = processor.list_states()
+    debug_states = processor.list_debug_states()
     for channel in channels:
-        channel_metrics = metrics.get(int(channel["id"]))
+        channel_id = int(channel["id"])
+        channel_metrics = metrics.get(channel_id)
         if channel_metrics:
             channel["metrics"] = channel_metrics.__dict__
+        channel["debug_state"] = debug_states.get(channel_id, {})
     return channels
 
 
@@ -700,6 +707,77 @@ def get_event_media(event_id: int, kind: str) -> FileResponse:
     return FileResponse(path=path_obj, media_type="image/jpeg")
 
 
+
+
+@app.get("/api/debug/settings")
+def get_debug_settings() -> Dict[str, Any]:
+    return processor.get_debug_settings()
+
+
+@app.put("/api/debug/settings")
+def put_debug_settings(payload: DebugPayload) -> Dict[str, Any]:
+    body = payload.model_dump()
+    settings.save_debug_settings(body)
+    return processor.update_debug_settings(body)
+
+
+@app.get("/api/debug/channels")
+def debug_channels() -> Dict[str, Any]:
+    metrics = processor.list_states()
+    states = processor.list_debug_states()
+    return {
+        "settings": processor.get_debug_settings(),
+        "channels": [
+            {
+                "channel_id": channel_id,
+                "metrics": metric.__dict__,
+                "debug_state": states.get(channel_id, {}),
+            }
+            for channel_id, metric in metrics.items()
+        ],
+    }
+
+
+@app.get("/api/debug/state")
+def debug_state() -> Dict[str, Any]:
+    return {
+        "settings": processor.get_debug_settings(),
+        "channel_states": processor.list_debug_states(),
+    }
+
+
+@app.get("/api/debug/logs")
+def debug_logs(limit: int = 200) -> Dict[str, Any]:
+    return {"items": debug_log_bus.snapshot(limit=limit)}
+
+
+@app.get("/api/debug/logs/stream")
+async def stream_debug_logs(request: Request, last_id: int = 0) -> StreamingResponse:
+    async def generator():
+        cursor = max(0, int(last_id))
+        yield "retry: 2000\n\n"
+        while not STREAM_SHUTDOWN.is_set():
+            if await request.is_disconnected():
+                break
+            items = await asyncio.to_thread(debug_log_bus.wait_for_entries, cursor, 15.0)
+            if not items:
+                yield ": ping\n\n"
+                continue
+            for item in items:
+                cursor = max(cursor, int(item.get("id", cursor)))
+                yield f"data: {json.dumps(item, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(
+        generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
 @app.get("/api/events/stream")
 async def stream_events(request: Request) -> StreamingResponse:
     queue = await event_bus.subscribe()
@@ -861,7 +939,9 @@ def put_global_settings(payload: GlobalSettingsPayload) -> Dict[str, Any]:
     settings.save_storage_settings(payload.storage.model_dump())
     settings.save_time_settings(payload.time.model_dump())
     settings.save_plate_settings(payload.plates.model_dump())
-    settings.save_debug_settings(payload.debug.model_dump())
+    debug_payload = payload.debug.model_dump()
+    settings.save_debug_settings(debug_payload)
+    processor.update_debug_settings(debug_payload)
     settings.save_logging_config(payload.logging.model_dump())
     configure_logging(settings.get_logging_config(), service_name="api")
 

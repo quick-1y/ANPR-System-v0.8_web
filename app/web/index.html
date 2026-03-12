@@ -75,6 +75,13 @@
                 </select>
               </div>
               <div class="video-grid" id="videoGrid"></div>
+              <div class="obs-debug-panel" id="obsDebugPanel" data-collapsed="0">
+                <div class="panel-header obs-debug-header">
+                  <span>Debug логи</span>
+                  <button class="btn btn-ghost" id="toggleDebugPanelBtn">Свернуть</button>
+                </div>
+                <div class="log-output obs-log-output" id="debugLog"></div>
+              </div>
             </div>
             <div class="obs-right">
               <div class="panel-header obs-events-header">
@@ -764,13 +771,7 @@
             <button class="btn btn-primary" id="saveDebugBtn">
               Сохранить debug
             </button>
-            <div class="s-card">
-              <div class="s-card-header">Лог UI/API</div>
-              <div class="s-card-body">
-                <div class="log-output" id="debugLog"></div>
-              </div>
-            </div>
-          </div>
+</div>
         </div>
       </div>
     </div>

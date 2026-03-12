@@ -499,6 +499,22 @@ UI параллельно:
 - `GET /api/channels/{channel_id}/preview/status`
 - `GET /api/channels/{channel_id}/preview.mjpg`
 
+
+### Debug
+
+- `GET /api/debug/settings`
+- `PUT /api/debug/settings`
+- `GET /api/debug/state`
+- `GET /api/debug/channels`
+- `GET /api/debug/logs`
+- `GET /api/debug/logs/stream`
+
+Debug-слой централизован:
+- флаги overlay (`show_detection_boxes`, `show_ocr_text`, `show_direction_tracks`, `show_channel_metrics`) и `log_panel_enabled` читаются из единого registry;
+- overlay рендерится только для live preview (`snapshot.jpg`/`preview.mjpg`) и не влияет на сохранение event media (`frame_path`, `plate_path` остаются raw);
+- live лог-панель получает backend-логи через ring buffer и SSE stream (`/api/debug/logs/stream`);
+- debug overlay state очищается автоматически по TTL, чтобы рамки/трек/OCR не залипали при исчезновении объекта.
+
 ### События
 
 - `GET /api/events`

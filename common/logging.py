@@ -9,6 +9,8 @@ from datetime import datetime, timedelta
 from logging.handlers import QueueHandler, QueueListener
 from typing import Any, Optional
 
+from packages.anpr_core.debug import DebugLogBus
+
 LOG_FILENAME_TIME_FORMAT = "%Y-%m-%d_%H-00"
 DEFAULT_LEVEL = "INFO"
 DEFAULT_LOG_DIR = "logs"
@@ -23,6 +25,31 @@ _CLEANUP_STOP: threading.Event | None = None
 _FILE_HANDLER: logging.Handler | None = None
 _CONSOLE_HANDLER: logging.Handler | None = None
 _CURRENT_SERVICE_NAME = "app"
+_LIVE_LOG_BUS = DebugLogBus(capacity=2000)
+
+
+class LiveDebugHandler(logging.Handler):
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            message = record.getMessage()
+            channel_id = getattr(record, "channel_id", None)
+            if channel_id is None:
+                channel_id = getattr(record, "channel", None)
+            parsed_channel_id: int | None = None
+            if channel_id is not None:
+                try:
+                    parsed_channel_id = int(channel_id)
+                except (TypeError, ValueError):
+                    parsed_channel_id = None
+            _LIVE_LOG_BUS.publish(
+                level=record.levelname,
+                logger_name=record.name,
+                message=message,
+                service=str(getattr(record, "service", _CURRENT_SERVICE_NAME)),
+                channel_id=parsed_channel_id,
+            )
+        except Exception:
+            self.handleError(record)
 
 
 class ServiceNameFilter(logging.Filter):
@@ -211,7 +238,8 @@ def configure_logging(config: dict[str, Any] | None, *, service_name: str) -> No
         root_logger.setLevel(level)
         root_logger.addHandler(queue_handler)
 
-        _QUEUE_LISTENER = QueueListener(_LOG_QUEUE, file_handler, console_handler, respect_handler_level=True)
+        live_handler = LiveDebugHandler()
+        _QUEUE_LISTENER = QueueListener(_LOG_QUEUE, file_handler, console_handler, live_handler, respect_handler_level=True)
         _QUEUE_LISTENER.start()
 
         if retention_days > 0:
@@ -240,6 +268,10 @@ def configure_logging(config: dict[str, Any] | None, *, service_name: str) -> No
 
 def get_logger(name: str) -> logging.Logger:
     return logging.getLogger(name)
+
+
+def get_live_log_bus() -> DebugLogBus:
+    return _LIVE_LOG_BUS
 
 
 def log_perf_stage(

@@ -7,6 +7,10 @@ const state = {
 };
 let eventSource = null;
 let streamReconnectTimer = null;
+let debugLogSource = null;
+let debugLogReconnectTimer = null;
+let lastDebugLogId = 0;
+let debugSettingsCache = null;
 function api(path) {
   return `${document.getElementById("apiBase").value.trim()}${path}`;
 }
@@ -587,6 +591,8 @@ async function loadGlobalSettings() {
   setChk("d_tracks", g.debug.show_direction_tracks);
   setChk("d_metrics", g.debug.show_channel_metrics);
   setChk("d_log", g.debug.log_panel_enabled);
+  debugSettingsCache = g.debug || {};
+  applyDebugPanelVisibility();
 }
 
 async function saveGeneral() {
@@ -641,7 +647,9 @@ async function saveGeneral() {
       log_panel_enabled: document.getElementById("d_log").checked,
     },
   };
-  await jfetch(api("/api/settings"), "PUT", payload);
+  const updated = await jfetch(api("/api/settings"), "PUT", payload);
+  debugSettingsCache = (updated || {}).debug || payload.debug;
+  applyDebugPanelVisibility();
   addDebug("[OK] global settings saved", "ok");
 }
 
@@ -1240,16 +1248,82 @@ async function testController(relay) {
   addDebug(`[OK] relay ${relay + 1} test sent`, "ok");
 }
 
-function addDebug(msg, type = "info") {
+function mapLogClass(level) {
+  const v = String(level || "INFO").toUpperCase();
+  if (v === "ERROR" || v === "CRITICAL") return "err";
+  if (v === "WARNING") return "warn";
+  if (v === "DEBUG") return "ok";
+  return "info";
+}
+
+function prependDebugLine(text, type = "info", timestamp = null, meta = "") {
   const log = document.getElementById("debugLog");
+  if (!log) return;
   const line = document.createElement("div");
   line.className = `log-line ${type}`;
-  line.innerHTML = `<span class='log-ts'>${new Date().toLocaleTimeString()}</span> ${msg}`;
+  const ts = timestamp ? new Date(timestamp).toLocaleTimeString() : new Date().toLocaleTimeString();
+  line.innerHTML = `<span class='log-ts'>${ts}</span>${meta ? ` <span class='log-meta'>${meta}</span>` : ""} ${text}`;
   log.prepend(line);
-  const maxLines = 300;
-  while (log.children.length > maxLines) {
-    log.removeChild(log.lastElementChild);
+  while (log.children.length > 300) log.removeChild(log.lastElementChild);
+}
+
+function addDebug(msg, type = "info") {
+  prependDebugLine(msg, type, null, "[UI]");
+}
+
+function applyDebugPanelVisibility() {
+  const panel = document.getElementById("obsDebugPanel");
+  const btn = document.getElementById("toggleDebugPanelBtn");
+  if (!panel) return;
+  const enabled = Boolean((debugSettingsCache || {}).log_panel_enabled);
+  panel.style.display = enabled ? "flex" : "none";
+  scheduleVideoGridLayout();
+  if (!enabled) return;
+  if (!panel.dataset.collapsed) panel.dataset.collapsed = "0";
+  if (btn) {
+    btn.textContent = panel.dataset.collapsed === "1" ? "Развернуть" : "Свернуть";
   }
+}
+
+function scheduleDebugLogReconnect(delayMs = 2000) {
+  if (debugLogReconnectTimer) return;
+  debugLogReconnectTimer = setTimeout(() => {
+    debugLogReconnectTimer = null;
+    setupDebugLogStream();
+  }, delayMs);
+}
+
+async function loadDebugLogHistory() {
+  try {
+    const payload = await jfetch(api("/api/debug/logs?limit=150"));
+    const items = Array.isArray(payload.items) ? payload.items : [];
+    items.reverse().forEach((item) => {
+      lastDebugLogId = Math.max(lastDebugLogId, Number(item.id || 0));
+      const prefix = `[${item.level}] ${item.service}/${item.logger}${item.channel_id ? ` #${item.channel_id}` : ""}`;
+      prependDebugLine(item.message, mapLogClass(item.level), item.timestamp, prefix);
+    });
+  } catch (err) {
+    prependDebugLine(`[WARN] не удалось загрузить историю логов: ${err.message}`, "warn");
+  }
+}
+
+function setupDebugLogStream() {
+  if (debugLogSource) {
+    try { debugLogSource.close(); } catch (_e) {}
+  }
+  debugLogSource = new EventSource(api(`/api/debug/logs/stream?last_id=${lastDebugLogId}`));
+  debugLogSource.onmessage = (evt) => {
+    try {
+      const item = JSON.parse(evt.data);
+      lastDebugLogId = Math.max(lastDebugLogId, Number(item.id || 0));
+      const prefix = `[${item.level}] ${item.service}/${item.logger}${item.channel_id ? ` #${item.channel_id}` : ""}`;
+      prependDebugLine(item.message, mapLogClass(item.level), item.timestamp, prefix);
+    } catch (_e) {}
+  };
+  debugLogSource.onerror = () => {
+    try { debugLogSource.close(); } catch (_e) {}
+    scheduleDebugLogReconnect();
+  };
 }
 function scheduleStreamReconnect(delayMs = 3000) {
   if (streamReconnectTimer) return;
@@ -1350,6 +1424,18 @@ async function openEventDetails(ev) {
   document.getElementById("eventModal").classList.add("active");
 }
 
+const toggleDebugPanelBtn = document.getElementById("toggleDebugPanelBtn");
+if (toggleDebugPanelBtn) {
+  toggleDebugPanelBtn.onclick = () => {
+    const panel = document.getElementById("obsDebugPanel");
+    if (!panel) return;
+    const collapsed = panel.dataset.collapsed === "1";
+    panel.dataset.collapsed = collapsed ? "0" : "1";
+    toggleDebugPanelBtn.textContent = collapsed ? "Свернуть" : "Развернуть";
+    scheduleVideoGridLayout();
+  };
+}
+
 document
   .querySelectorAll(".ttab")
   .forEach((el) => (el.onclick = () => switchTab(el.dataset.tab)));
@@ -1441,6 +1527,12 @@ window.addEventListener("beforeunload", () => {
     } catch (_e) {}
     eventSource = null;
   }
+  if (debugLogSource) {
+    try {
+      debugLogSource.close();
+    } catch (_e) {}
+    debugLogSource = null;
+  }
 });
 window.addEventListener("pagehide", () => {
   if (eventSource) {
@@ -1448,6 +1540,12 @@ window.addEventListener("pagehide", () => {
       eventSource.close();
     } catch (_e) {}
     eventSource = null;
+  }
+  if (debugLogSource) {
+    try {
+      debugLogSource.close();
+    } catch (_e) {}
+    debugLogSource = null;
   }
 });
 window.addEventListener("resize", renderEventFeed);
@@ -1469,6 +1567,8 @@ window.addEventListener("resize", renderEventFeed);
   await loadJournal();
   await loadLists();
   await loadGlobalSettings();
+  await loadDebugLogHistory();
+  setupDebugLogStream();
   await loadControllers();
   setupStream();
   addDebug("[INFO] UI initialized");
