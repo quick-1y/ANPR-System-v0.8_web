@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import dataclass
 from typing import Any, Dict
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 
 from anpr.infrastructure.settings_manager import SettingsManager
 from anpr.infrastructure.storage import StorageUnavailableError
@@ -43,46 +44,66 @@ class RetentionScheduler:
         return self._last_run
 
 
-settings = SettingsManager()
-configure_logging(settings.get_logging_config(), service_name="worker")
-storage = settings.get_storage_settings()
-policy = RetentionPolicy.from_storage(storage)
-lifecycle = DataLifecycleService(
-    screenshots_dir=settings.get_screenshot_dir(),
-    policy=policy,
-    postgres_dsn=str(storage.get("postgres_dsn", "")).strip(),
-)
-scheduler = RetentionScheduler(lifecycle)
+@dataclass
+class WorkerContainer:
+    settings: SettingsManager
+    lifecycle: DataLifecycleService
+    scheduler: RetentionScheduler
+
+    @classmethod
+    def build(cls) -> "WorkerContainer":
+        settings = SettingsManager()
+        configure_logging(settings.get_logging_config(), service_name="worker")
+        storage = settings.get_storage_settings()
+        policy = RetentionPolicy.from_storage(storage)
+        lifecycle = DataLifecycleService(
+            screenshots_dir=settings.get_screenshot_dir(),
+            policy=policy,
+            postgres_dsn=str(storage.get("postgres_dsn", "")).strip(),
+        )
+        scheduler = RetentionScheduler(lifecycle)
+        return cls(settings=settings, lifecycle=lifecycle, scheduler=scheduler)
+
 
 app = FastAPI(title="ANPR Retention Worker", version="0.8-stage7")
 
 
+def _get_container(request: Request) -> WorkerContainer:
+    return request.app.state.container
+
+
 @app.on_event("startup")
 async def startup() -> None:
+    container = WorkerContainer.build()
+    app.state.container = container
     logger.info("Retention worker startup")
-    scheduler.start()
+    container.scheduler.start()
 
 
 @app.on_event("shutdown")
 def shutdown() -> None:
     logger.info("Retention worker shutdown")
-    scheduler.stop()
+    container: WorkerContainer | None = getattr(app.state, "container", None)
+    if container is not None:
+        container.scheduler.stop()
 
 
 @app.get("/worker/health")
-def health() -> Dict[str, Any]:
+def health(request: Request) -> Dict[str, Any]:
+    container = _get_container(request)
     return {
         "status": "ok",
-        "policy": lifecycle.policy.to_storage(),
-        "last_run": scheduler.last_run,
+        "policy": container.lifecycle.policy.to_storage(),
+        "last_run": container.scheduler.last_run,
     }
 
 
 @app.post("/worker/retention/run")
-def run_retention() -> Dict[str, Any]:
+def run_retention(request: Request) -> Dict[str, Any]:
+    container = _get_container(request)
     logger.info("Ручной запуск retention endpoint")
     try:
-        result = lifecycle.run_retention_cycle()
+        result = container.lifecycle.run_retention_cycle()
         return {"status": "ok", **result}
     except StorageUnavailableError as exc:
         logger.exception("Ошибка retention cycle при ручном запуске")

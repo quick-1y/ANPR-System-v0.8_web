@@ -521,8 +521,7 @@ Debug-слой централизован:
 
 - `GET /api/events`
 - `GET /api/events/item/{event_id}`
-- `GET /api/events/item/{event_id}/media/frame`
-- `GET /api/events/item/{event_id}/media/plate`
+- `GET /api/events/item/{event_id}/media/{kind}` (`kind = frame|plate`)
 - `GET /api/events/stream`
 
 ### Контроллеры
@@ -585,6 +584,13 @@ Debug-слой централизован:
 
 - `GET /api/settings`
 - `PUT /api/settings`
+
+### Системные и служебные (ops/internal)
+
+- `GET /api/system/resources`
+- `GET /api/telemetry/channels`
+- `GET /api/storage/status`
+- `GET /api/channels/last-plates`
 
 ### Worker
 
@@ -666,7 +672,7 @@ ANPR-System-v0.8_web/
 - браузер не подключается к RTSP напрямую;
 - если чтение потока ломается, runtime пытается открыть источник заново;
 - live события идут отдельно от preview: preview — через MJPEG, события — через SSE;
-- endpoint `/api/events/stream` реализован как короткий SSE stream, а клиентская часть переподключается повторно.
+- endpoint `/api/events/stream` реализован как long-lived SSE stream: сервер держит соединение открытым, отправляет keepalive `: ping` и задаёт `retry`; клиентская часть автоматически переподключается при обрыве.
 
 ---
 
