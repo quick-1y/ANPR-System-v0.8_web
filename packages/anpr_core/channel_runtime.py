@@ -12,7 +12,7 @@ import cv2
 import numpy as np
 
 from common.logging import get_logger
-from packages.anpr_core.debug import DebugOverlayRenderer, DebugRegistry
+from packages.anpr_core.debug import DebugRegistry
 from packages.anpr_core.event_sink import EventSink
 
 logger = get_logger(__name__)
@@ -78,7 +78,6 @@ class ChannelProcessor:
         self._plate_settings = plate_settings or {}
         self._reconnect_config = self._build_reconnect_config(reconnect_settings or {})
         self._debug_registry = debug_registry or DebugRegistry()
-        self._debug_renderer = DebugOverlayRenderer()
         screenshots_dir = str(self._storage_settings.get("screenshots_dir", "data/screenshots")).strip() or "data/screenshots"
         self._screenshots_dir = Path(screenshots_dir).expanduser().resolve()
         self._screenshots_dir.mkdir(parents=True, exist_ok=True)
@@ -442,7 +441,7 @@ class ChannelProcessor:
                     detection_started = time.monotonic()
                     detections = detector.track(frame)
                     detection_ms = (time.monotonic() - detection_started) * 1000.0
-                    self._debug_registry.update_from_detections(channel_id, detections)
+                    self._debug_registry.update_from_detections(channel_id, detections, frame_shape=frame.shape)
                     ocr_started = time.monotonic()
                     results = pipeline.process_frame(frame, detections)
                     ocr_ms = (time.monotonic() - ocr_started) * 1000.0
@@ -495,16 +494,7 @@ class ChannelProcessor:
                         postprocess_ms=postprocess_ms,
                     )
 
-                debug_settings = self._debug_registry.get_settings()
-                preview_source = frame
-                if debug_settings.overlay_enabled:
-                    preview_source = self._debug_renderer.render(
-                        frame,
-                        settings=debug_settings,
-                        state=self._debug_registry.get_channel_state_snapshot(channel_id),
-                        metrics=metrics,
-                    )
-                ok_enc, preview_buf = cv2.imencode('.jpg', preview_source, [int(cv2.IMWRITE_JPEG_QUALITY), 80])
+                ok_enc, preview_buf = cv2.imencode('.jpg', frame, [int(cv2.IMWRITE_JPEG_QUALITY), 80])
                 if ok_enc:
                     now_ts = time.time()
                     with self._lock:

@@ -226,6 +226,85 @@ function ensurePreviewStream(img, channelId) {
   }
 }
 
+
+function formatDirection(direction) {
+  const value = String(direction || "").trim().toUpperCase();
+  if (!value || value === "UNKNOWN") return "";
+  return value;
+}
+
+function renderDebugOverlay(cell, ch) {
+  if (!cell || !ch) return;
+  const state = ch.debug_state || {};
+  const overlayData = state.overlay || {};
+  const bbox = Array.isArray(overlayData.bbox_norm) ? overlayData.bbox_norm : null;
+  const overlayLayer = cell.querySelector(".cam-overlay-layer");
+  if (!overlayLayer) return;
+  const box = overlayLayer.querySelector(".cam-detection-box");
+  const ocrEl = overlayLayer.querySelector(".cam-ocr-label");
+  const dirEl = overlayLayer.querySelector(".cam-direction-label");
+  if (!box || !ocrEl || !dirEl) return;
+
+  if (!bbox || bbox.length < 4) {
+    box.style.display = "none";
+    ocrEl.style.display = "none";
+    dirEl.style.display = "none";
+  } else {
+    const [x1, y1, x2, y2] = bbox.map((v) => Math.max(0, Math.min(1, Number(v) || 0)));
+    const w = Math.max(0, x2 - x1);
+    const h = Math.max(0, y2 - y1);
+    if (w <= 0 || h <= 0) {
+      box.style.display = "none";
+      ocrEl.style.display = "none";
+      dirEl.style.display = "none";
+    } else {
+      box.style.display = "block";
+      box.style.left = `${x1 * 100}%`;
+      box.style.top = `${y1 * 100}%`;
+      box.style.width = `${w * 100}%`;
+      box.style.height = `${h * 100}%`;
+
+      const ocrText = String(overlayData.ocr_text || "").trim();
+      if (ocrText) {
+        ocrEl.textContent = ocrText;
+        ocrEl.style.display = "block";
+        ocrEl.classList.toggle("below", y1 < 0.07);
+      } else {
+        ocrEl.style.display = "none";
+      }
+
+      const direction = formatDirection(overlayData.direction);
+      if (direction) {
+        dirEl.textContent = direction;
+        dirEl.style.display = "block";
+      } else {
+        dirEl.style.display = "none";
+      }
+    }
+  }
+
+  const metricsWidget = cell.querySelector(".cam-metrics-widget");
+  if (!metricsWidget) return;
+  const showMetrics = Boolean((debugSettingsCache || {}).show_channel_metrics);
+  metricsWidget.style.display = showMetrics ? "block" : "none";
+  if (!showMetrics) return;
+  const metrics = ch.metrics || {};
+  const timings = (state.stage_timings || {});
+  const rows = [
+    `State: ${metrics.state || "unknown"}`,
+    `FPS: ${(Number(metrics.fps) || 0).toFixed(2)}`,
+    `Latency: ${(Number(metrics.latency_ms) || 0).toFixed(1)}ms`,
+    `Reconnect: ${Number(metrics.reconnect_count) || 0}`,
+    `Timeouts: ${Number(metrics.timeout_count) || 0}`,
+    `Empty/Fail: ${(Number(metrics.empty_frames) || 0)}/${(Number(metrics.failed_frames) || 0)}`,
+    `Skipped D/M: ${(Number(metrics.detector_skipped_frames) || 0)}/${(Number(metrics.motion_skipped_frames) || 0)}`,
+    `Detect: ${(Number(timings.detection_ms) || 0).toFixed(1)}ms`,
+    `OCR: ${(Number(timings.ocr_ms) || 0).toFixed(1)}ms`,
+    `Post: ${(Number(timings.postprocess_ms) || 0).toFixed(1)}ms`,
+  ];
+  metricsWidget.innerHTML = rows.map((row) => `<div>${row}</div>`).join("");
+}
+
 function createVideoCell(ch, idx) {
   const statusText = statusTextForChannel(ch);
   const cell = document.createElement("div");
@@ -233,7 +312,21 @@ function createVideoCell(ch, idx) {
   cell.dataset.channelId = String(ch.id);
   cell.dataset.previewLoaded = "0";
   cell.dataset.statusText = statusText;
-  cell.innerHTML = `<div class='video-cell-bg'></div><img class='cam-preview' id='v-${ch.id}' alt='preview CAM-${ch.id}' /><div class='cam-label'>${ch.name}</div><div class='cam-status off'></div><div class='cam-plate' id='plate-${ch.id}'></div>`;
+  cell.innerHTML = `
+    <div class='video-cell-bg'></div>
+    <div class='cam-media-wrapper'>
+      <img class='cam-preview' id='v-${ch.id}' alt='preview CAM-${ch.id}' />
+      <div class='cam-overlay-layer'>
+        <div class='cam-detection-box'>
+          <div class='cam-ocr-label'></div>
+          <div class='cam-direction-label'></div>
+        </div>
+      </div>
+    </div>
+    <div class='cam-label'>${ch.name}</div>
+    <div class='cam-status off'></div>
+    <div class='cam-metrics-widget'></div>
+    <div class='cam-plate' id='plate-${ch.id}'></div>`;
   const preview = cell.querySelector(".cam-preview");
   bindPreviewLifecycle(cell, preview);
   ensureNoSignalOverlay(cell);
@@ -245,6 +338,7 @@ function createVideoCell(ch, idx) {
     statusDot.classList.toggle("off", !hasPreviewSignal);
   }
   ensurePreviewStream(preview, ch.id);
+  renderDebugOverlay(cell, ch);
   updateChannelLastPlate(ch.id, state.lastPlatesByChannelId[ch.id]);
   return cell;
 }
@@ -265,6 +359,7 @@ function updateVideoCell(cell, ch, idx) {
   const preview = cell.querySelector(".cam-preview");
   bindPreviewLifecycle(cell, preview);
   ensurePreviewStream(preview, ch.id);
+  renderDebugOverlay(cell, ch);
   updateChannelLastPlate(ch.id, state.lastPlatesByChannelId[ch.id]);
 }
 
@@ -602,9 +697,6 @@ async function loadGlobalSettings() {
   setVal("g_offset_minutes", g.time.offset_minutes);
   setVal("g_plates_dir", g.plates.config_dir);
   setVal("g_countries", (g.plates.enabled_countries || []).join(","));
-  setChk("d_boxes", g.debug.show_detection_boxes);
-  setChk("d_ocr", g.debug.show_ocr_text);
-  setChk("d_tracks", g.debug.show_direction_tracks);
   setChk("d_metrics", g.debug.show_channel_metrics);
   setChk("d_log", g.debug.log_panel_enabled);
   debugSettingsCache = g.debug || {};
@@ -656,9 +748,6 @@ async function saveGeneral() {
             .filter(Boolean),
     },
     debug: {
-      show_detection_boxes: document.getElementById("d_boxes").checked,
-      show_ocr_text: document.getElementById("d_ocr").checked,
-      show_direction_tracks: document.getElementById("d_tracks").checked,
       show_channel_metrics: document.getElementById("d_metrics").checked,
       log_panel_enabled: document.getElementById("d_log").checked,
     },
@@ -666,6 +755,7 @@ async function saveGeneral() {
   const updated = await jfetch(api("/api/settings"), "PUT", payload);
   debugSettingsCache = (updated || {}).debug || payload.debug;
   applyDebugPanelVisibility();
+  renderVideoGrid();
   addDebug("[OK] global settings saved", "ok");
 }
 
