@@ -273,7 +273,18 @@ function computeVideoGridRowHeight(grid, rows, cols) {
   const style = window.getComputedStyle(grid);
   const gap = Number.parseFloat(style.rowGap || style.gap || "0") || 0;
   const width = grid.clientWidth;
-  const height = grid.clientHeight;
+  const rawHeight = grid.clientHeight;
+  const obsLeft = grid.closest(".obs-left");
+  const obsTab = grid.closest("#tab-obs");
+  const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
+  const measuredHeights = [
+    rawHeight,
+    obsLeft ? obsLeft.clientHeight : 0,
+    obsTab ? obsTab.clientHeight : 0,
+    viewportHeight,
+  ].filter((v) => Number.isFinite(v) && v > 0);
+  const height = measuredHeights.length ? Math.min(...measuredHeights) : 0;
+
   if (width <= 0 || height <= 0) return null;
 
   const availableWidth = width - gap * (cols - 1);
@@ -288,13 +299,16 @@ function computeVideoGridRowHeight(grid, rows, cols) {
 
 function renderVideoGrid() {
   const grid = document.getElementById("videoGrid");
-  const [rows, cols] = gridConfig(document.getElementById("gridSelect").value);
+  if (!grid) return;
+  const [presetRows, cols] = gridConfig(document.getElementById("gridSelect").value);
+  const visible = state.channels.slice(0, presetRows * cols);
+  const effectiveRows = visible.length > 0 ? Math.ceil(visible.length / cols) : 1;
+
   grid.style.gridTemplateColumns = `repeat(${cols}, minmax(0, 1fr))`;
-  const stableRowHeight = computeVideoGridRowHeight(grid, rows, cols);
+  const stableRowHeight = computeVideoGridRowHeight(grid, effectiveRows, cols);
   grid.style.gridTemplateRows = stableRowHeight
-    ? `repeat(${rows}, ${stableRowHeight}px)`
-    : `repeat(${rows}, minmax(0, 1fr))`;
-  const visible = state.channels.slice(0, rows * cols);
+    ? `repeat(${effectiveRows}, ${stableRowHeight}px)`
+    : `repeat(${effectiveRows}, minmax(0, 1fr))`;
   document.getElementById("channelsCount").textContent =
     `${state.channels.length} канала`;
 
@@ -335,11 +349,13 @@ function setupVideoGridLayoutGuards() {
   });
   if (typeof ResizeObserver !== "function") return;
   const obsLeft = document.querySelector("#tab-obs .obs-left");
-  if (!obsLeft) return;
+  const grid = document.getElementById("videoGrid");
+  if (!obsLeft && !grid) return;
   videoGridResizeObserver = new ResizeObserver(() => {
     scheduleVideoGridLayout();
   });
-  videoGridResizeObserver.observe(obsLeft);
+  if (obsLeft) videoGridResizeObserver.observe(obsLeft);
+  if (grid) videoGridResizeObserver.observe(grid);
 }
 
 
