@@ -268,17 +268,26 @@ class ChannelProcessor:
         return crop
 
     def _apply_roi_mask(self, frame: np.ndarray, channel: dict) -> np.ndarray:
-        if not bool(channel.get("roi_enabled", False)):
+        roi_polygon = self._get_roi_polygon(frame.shape, channel)
+        if roi_polygon is None:
             return frame
+
+        mask = np.zeros(frame.shape[:2], dtype=np.uint8)
+        cv2.fillPoly(mask, [roi_polygon], 255)
+        return cv2.bitwise_and(frame, frame, mask=mask)
+
+    @staticmethod
+    def _get_roi_polygon(frame_shape: tuple[int, ...], channel: dict) -> Optional[np.ndarray]:
+        if not bool(channel.get("roi_enabled", False)):
+            return None
 
         region = channel.get("region") or {}
         points = region.get("points") or []
         if len(points) < 3:
-            return frame
+            return None
 
-        height, width = frame.shape[:2]
+        height, width = frame_shape[:2]
         unit = str(region.get("unit", "px")).strip().lower()
-
         polygon_points: list[list[int]] = []
         for point in points:
             if not isinstance(point, dict):
@@ -298,12 +307,33 @@ class ChannelProcessor:
             polygon_points.append([int(round(x_value)), int(round(y_value))])
 
         if len(polygon_points) < 3:
-            return frame
+            return None
+        return np.array(polygon_points, dtype=np.int32)
 
-        mask = np.zeros(frame.shape[:2], dtype=np.uint8)
-        contour = np.array([polygon_points], dtype=np.int32)
-        cv2.fillPoly(mask, contour, 255)
-        return cv2.bitwise_and(frame, frame, mask=mask)
+    @staticmethod
+    def _is_point_in_polygon(point: tuple[float, float], polygon: np.ndarray) -> bool:
+        return cv2.pointPolygonTest(polygon, point, False) >= 0
+
+    def _filter_detections_by_roi(
+        self,
+        detections: list[dict[str, Any]],
+        frame_shape: tuple[int, ...],
+        channel: dict,
+    ) -> list[dict[str, Any]]:
+        roi_polygon = self._get_roi_polygon(frame_shape, channel)
+        if roi_polygon is None:
+            return detections
+
+        filtered: list[dict[str, Any]] = []
+        for detection in detections:
+            clipped_bbox = self._clip_bbox(detection.get("bbox"), frame_shape)
+            if clipped_bbox is None:
+                continue
+            x1, y1, x2, y2 = clipped_bbox
+            center = ((x1 + x2) / 2.0, (y1 + y2) / 2.0)
+            if self._is_point_in_polygon(center, roi_polygon):
+                filtered.append(detection)
+        return filtered
 
     def _run_channel(self, channel_id: int) -> None:
         with self._lock:
@@ -465,7 +495,7 @@ class ChannelProcessor:
                 motion_active = True
                 should_process = True
                 if motion_detector is not None:
-                    motion_active = bool(motion_detector.update(frame))
+                    motion_active = bool(motion_detector.update(detector_frame))
                     metrics.motion_active = motion_active
                     if not motion_active:
                         metrics.motion_skipped_frames += 1
@@ -480,6 +510,7 @@ class ChannelProcessor:
                 if should_process:
                     detection_started = time.monotonic()
                     detections = detector.track(detector_frame)
+                    detections = self._filter_detections_by_roi(detections, frame.shape, channel)
                     detection_ms = (time.monotonic() - detection_started) * 1000.0
                     self._debug_registry.update_from_detections(channel_id, detections, frame_shape=frame.shape)
                     ocr_started = time.monotonic()
