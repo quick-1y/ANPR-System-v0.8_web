@@ -2,18 +2,13 @@
 #/anpr/infrastructure/settings_manager.py
 import copy
 import os
-import tempfile
-
-import yaml
-import threading
 from typing import Any, Dict, List, Optional
 
 from common.logging import get_logger
 from controllers import SUPPORTED_CONTROLLER_TYPES
 
-from anpr.infrastructure.settings_migrations import run_settings_migrations
+from anpr.infrastructure.settings_repository import SettingsRepository
 from anpr.infrastructure.settings_schema import (
-    SETTINGS_VERSION,
     DEFAULT_ROI_POINTS,
     build_default_settings,
     channel_defaults,
@@ -45,101 +40,14 @@ def normalize_region_config(region: Optional[Dict[str, Any]]) -> Dict[str, Any]:
 class SettingsManager:
     """Управляет конфигурацией приложения и каналами."""
 
-    _file_lock = threading.RLock()
-
     def __init__(self, path: str | None = None) -> None:
-        self.path = path or os.getenv("SETTINGS_PATH", "config/settings.yaml")
-        self.settings = self._load()
+        self._repo = SettingsRepository(self, path)
+        self.settings = self._repo.settings
+        self._file_lock = self._repo._file_lock
 
     def _default(self) -> Dict[str, Any]:
         return build_default_settings()
 
-    def _load(self) -> Dict[str, Any]:
-        with self._file_lock:
-            if not os.path.exists(self.path):
-                defaults = self._default()
-                self._write_to_disk(defaults)
-                return defaults
-            with open(self.path, "r", encoding="utf-8") as f:
-                data = yaml.safe_load(f)
-            if data is None:
-                data = {}
-            if not isinstance(data, dict):
-                raise ValueError(f"Некорректный формат {self.path}: ожидается YAML-объект")
-        return self._upgrade(data)
-
-    def _upgrade(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        """Обновляет существующие настройки, добавляя недостающие поля."""
-
-        data, changed = run_settings_migrations(data, SETTINGS_VERSION)
-        tracking_defaults = data.get("tracking", {})
-        reconnect_defaults = self._reconnect_defaults()
-        storage_defaults = self._storage_defaults()
-        plate_defaults = self._plate_defaults()
-        time_defaults = self._time_defaults()
-        logging_defaults = self._logging_defaults()
-        model_defaults = self._model_defaults()
-        ocr_defaults = self._ocr_defaults()
-        detector_defaults = self._detector_defaults()
-        inference_defaults = self._inference_defaults()
-        debug_defaults = self._debug_defaults()
-
-        if not data.get("theme"):
-            data["theme"] = "dark"
-            changed = True
-
-        direction_defaults = self._direction_defaults()
-        direction_settings = tracking_defaults.get("direction")
-        if direction_settings is None:
-            tracking_defaults["direction"] = direction_defaults
-            data["tracking"] = tracking_defaults
-            changed = True
-        else:
-            for key, value in direction_defaults.items():
-                if key not in direction_settings:
-                    direction_settings[key] = value
-                    changed = True
-
-        for channel in data.get("channels", []):
-            if self._fill_channel_defaults(channel, tracking_defaults):
-                changed = True
-
-        if self._fill_reconnect_defaults(data, reconnect_defaults):
-            changed = True
-
-        if self._fill_model_defaults(data, model_defaults):
-            changed = True
-
-        if self._fill_ocr_defaults(data, ocr_defaults):
-            changed = True
-
-        if self._fill_detector_defaults(data, detector_defaults):
-            changed = True
-
-        if self._fill_inference_defaults(data, inference_defaults):
-            changed = True
-
-        if self._fill_storage_defaults(data, storage_defaults):
-            changed = True
-
-        if self._fill_plate_defaults(data, plate_defaults):
-            changed = True
-
-        if self._fill_time_defaults(data, time_defaults):
-            changed = True
-
-        if self._fill_logging_defaults(data, logging_defaults):
-            changed = True
-
-        if self._fill_debug_defaults(data, debug_defaults):
-            changed = True
-
-        if self._fill_controller_defaults(data):
-            changed = True
-
-        if changed:
-            self._save(data)
-        return data
 
     @staticmethod
     def _channel_defaults(tracking_defaults: Dict[str, Any]) -> Dict[str, Any]:
@@ -561,27 +469,6 @@ class SettingsManager:
         data["logging"] = logging_section
         return changed
 
-    def _save(self, data: Dict[str, Any]) -> None:
-        logger.debug(f"Сохранение настроек из потока: {threading.current_thread().name}")
-        with self._file_lock:
-            snapshot = copy.deepcopy(data)
-        self._write_to_disk(snapshot)
-
-    def _write_to_disk(self, data: Dict[str, Any]) -> None:
-        os.makedirs(os.path.dirname(self.path) or ".", exist_ok=True)
-        with self._file_lock:
-            fd, tmp_path = tempfile.mkstemp(
-                dir=os.path.dirname(self.path) or ".", prefix=".settings_", suffix=".tmp"
-            )
-            try:
-                with os.fdopen(fd, "w", encoding="utf-8") as f:
-                    yaml.safe_dump(data, f, allow_unicode=True, sort_keys=False)
-                    f.flush()
-                    os.fsync(f.fileno())
-                os.replace(tmp_path, self.path)
-            finally:
-                if os.path.exists(tmp_path):
-                    os.remove(tmp_path)
 
     def get_channels(self) -> List[Dict[str, Any]]:
         with self._file_lock:
@@ -616,7 +503,7 @@ class SettingsManager:
         with self._file_lock:
             self.settings["channels"] = copy.deepcopy(channels)
             settings_snapshot = copy.deepcopy(self.settings)
-        self._save(settings_snapshot)
+        self._repo.save(settings_snapshot)
 
     def get_controllers(self) -> List[Dict[str, Any]]:
         with self._file_lock:
@@ -675,7 +562,7 @@ class SettingsManager:
         with self._file_lock:
             self.settings["controllers"] = copy.deepcopy(controllers)
             settings_snapshot = copy.deepcopy(self.settings)
-        self._save(settings_snapshot)
+        self._repo.save(settings_snapshot)
 
     def get_grid(self) -> str:
         with self._file_lock:
@@ -685,7 +572,7 @@ class SettingsManager:
         with self._file_lock:
             self.settings["grid"] = grid
             settings_snapshot = copy.deepcopy(self.settings)
-        self._save(settings_snapshot)
+        self._repo.save(settings_snapshot)
 
     def get_theme(self) -> str:
         with self._file_lock:
@@ -695,20 +582,20 @@ class SettingsManager:
         with self._file_lock:
             self.settings["theme"] = theme
             settings_snapshot = copy.deepcopy(self.settings)
-        self._save(settings_snapshot)
+        self._repo.save(settings_snapshot)
 
     def get_reconnect(self) -> Dict[str, Any]:
         with self._file_lock:
             if self._fill_reconnect_defaults(self.settings, self._reconnect_defaults()):
                 settings_snapshot = copy.deepcopy(self.settings)
-                self._save(settings_snapshot)
+                self._repo.save(settings_snapshot)
             return copy.deepcopy(self.settings.get("reconnect", {}))
 
     def save_reconnect(self, reconnect_conf: Dict[str, Any]) -> None:
         with self._file_lock:
             self.settings["reconnect"] = reconnect_conf
             settings_snapshot = copy.deepcopy(self.settings)
-        self._save(settings_snapshot)
+        self._repo.save(settings_snapshot)
 
     def save_screenshot_dir(self, path: str) -> None:
         with self._file_lock:
@@ -716,7 +603,7 @@ class SettingsManager:
             storage["screenshots_dir"] = path
             self.settings["storage"] = storage
             settings_snapshot = copy.deepcopy(self.settings)
-        self._save(settings_snapshot)
+        self._repo.save(settings_snapshot)
 
     def save_logs_dir(self, path: str) -> None:
         with self._file_lock:
@@ -724,7 +611,7 @@ class SettingsManager:
             storage["logs_dir"] = path
             self.settings["storage"] = storage
             settings_snapshot = copy.deepcopy(self.settings)
-        self._save(settings_snapshot)
+        self._repo.save(settings_snapshot)
 
     def get_screenshot_dir(self) -> str:
         with self._file_lock:
@@ -740,7 +627,7 @@ class SettingsManager:
         with self._file_lock:
             if self._fill_storage_defaults(self.settings, self._storage_defaults()):
                 settings_snapshot = copy.deepcopy(self.settings)
-                self._save(settings_snapshot)
+                self._repo.save(settings_snapshot)
             storage = copy.deepcopy(self.settings.get("storage", {}))
 
         env_postgres_dsn = os.getenv("POSTGRES_DSN", "postgresql://anpr:anpr@postgres:5432/anpr").strip()
@@ -755,7 +642,7 @@ class SettingsManager:
             current.update(sanitized)
             self.settings["storage"] = current
             settings_snapshot = copy.deepcopy(self.settings)
-        self._save(settings_snapshot)
+        self._repo.save(settings_snapshot)
 
     def get_log_retention_days(self) -> int:
         with self._file_lock:
@@ -768,20 +655,20 @@ class SettingsManager:
             logging_config["retention_days"] = int(days)
             self.settings["logging"] = logging_config
             settings_snapshot = copy.deepcopy(self.settings)
-        self._save(settings_snapshot)
+        self._repo.save(settings_snapshot)
 
     def get_time_settings(self) -> Dict[str, Any]:
         with self._file_lock:
             if self._fill_time_defaults(self.settings, self._time_defaults()):
                 settings_snapshot = copy.deepcopy(self.settings)
-                self._save(settings_snapshot)
+                self._repo.save(settings_snapshot)
             return copy.deepcopy(self.settings.get("time", {}))
 
     def save_time_settings(self, time_settings: Dict[str, Any]) -> None:
         with self._file_lock:
             self.settings["time"] = time_settings
             settings_snapshot = copy.deepcopy(self.settings)
-        self._save(settings_snapshot)
+        self._repo.save(settings_snapshot)
 
     def get_timezone(self) -> str:
         time_settings = self.get_time_settings()
@@ -805,7 +692,7 @@ class SettingsManager:
             tracking["best_shots"] = int(best_shots)
             self.settings["tracking"] = tracking
             settings_snapshot = copy.deepcopy(self.settings)
-        self._save(settings_snapshot)
+        self._repo.save(settings_snapshot)
 
     def get_cooldown_seconds(self) -> int:
         with self._file_lock:
@@ -818,7 +705,7 @@ class SettingsManager:
             tracking["cooldown_seconds"] = int(cooldown)
             self.settings["tracking"] = tracking
             settings_snapshot = copy.deepcopy(self.settings)
-        self._save(settings_snapshot)
+        self._repo.save(settings_snapshot)
 
     def get_min_confidence(self) -> float:
         with self._file_lock:
@@ -831,29 +718,29 @@ class SettingsManager:
             tracking["ocr_min_confidence"] = float(min_conf)
             self.settings["tracking"] = tracking
             settings_snapshot = copy.deepcopy(self.settings)
-        self._save(settings_snapshot)
+        self._repo.save(settings_snapshot)
 
     def get_plate_settings(self) -> Dict[str, Any]:
         with self._file_lock:
             if self._fill_plate_defaults(self.settings, self._plate_defaults()):
                 settings_snapshot = copy.deepcopy(self.settings)
-                self._save(settings_snapshot)
+                self._repo.save(settings_snapshot)
             return copy.deepcopy(self.settings.get("plates", {}))
 
     def save_plate_settings(self, plate_settings: Dict[str, Any]) -> None:
         with self._file_lock:
             self.settings["plates"] = plate_settings
             settings_snapshot = copy.deepcopy(self.settings)
-        self._save(settings_snapshot)
+        self._repo.save(settings_snapshot)
 
     def get_logging_config(self) -> Dict[str, Any]:
         with self._file_lock:
             if self._fill_logging_defaults(self.settings, self._logging_defaults()):
                 settings_snapshot = copy.deepcopy(self.settings)
-                self._save(settings_snapshot)
+                self._repo.save(settings_snapshot)
             if self._fill_storage_defaults(self.settings, self._storage_defaults()):
                 settings_snapshot = copy.deepcopy(self.settings)
-                self._save(settings_snapshot)
+                self._repo.save(settings_snapshot)
             logging_config = copy.deepcopy(self.settings.get("logging", {}))
             storage = self.settings.get("storage", {})
             logging_config["logs_dir"] = storage.get("logs_dir", "logs")
@@ -867,26 +754,26 @@ class SettingsManager:
             current["allowed_levels"] = list(self._logging_defaults().get("allowed_levels", []))
             self.settings["logging"] = current
             settings_snapshot = copy.deepcopy(self.settings)
-        self._save(settings_snapshot)
+        self._repo.save(settings_snapshot)
 
     def get_debug_settings(self) -> Dict[str, Any]:
         with self._file_lock:
             if self._fill_debug_defaults(self.settings, self._debug_defaults()):
                 settings_snapshot = copy.deepcopy(self.settings)
-                self._save(settings_snapshot)
+                self._repo.save(settings_snapshot)
             return copy.deepcopy(self.settings.get("debug", {}))
 
     def save_debug_settings(self, debug_settings: Dict[str, Any]) -> None:
         with self._file_lock:
             self.settings["debug"] = debug_settings
             settings_snapshot = copy.deepcopy(self.settings)
-        self._save(settings_snapshot)
+        self._repo.save(settings_snapshot)
 
     def get_model_settings(self) -> Dict[str, Any]:
         with self._file_lock:
             if self._fill_model_defaults(self.settings, self._model_defaults()):
                 settings_snapshot = copy.deepcopy(self.settings)
-                self._save(settings_snapshot)
+                self._repo.save(settings_snapshot)
             return copy.deepcopy(self.settings.get("models", {}))
 
     def save_model_device(self, device: str) -> None:
@@ -895,27 +782,27 @@ class SettingsManager:
             models["device"] = device
             self.settings["models"] = models
             settings_snapshot = copy.deepcopy(self.settings)
-        self._save(settings_snapshot)
+        self._repo.save(settings_snapshot)
 
     def get_ocr_settings(self) -> Dict[str, Any]:
         with self._file_lock:
             if self._fill_ocr_defaults(self.settings, self._ocr_defaults()):
                 settings_snapshot = copy.deepcopy(self.settings)
-                self._save(settings_snapshot)
+                self._repo.save(settings_snapshot)
             return copy.deepcopy(self.settings.get("ocr", {}))
 
     def get_detector_settings(self) -> Dict[str, Any]:
         with self._file_lock:
             if self._fill_detector_defaults(self.settings, self._detector_defaults()):
                 settings_snapshot = copy.deepcopy(self.settings)
-                self._save(settings_snapshot)
+                self._repo.save(settings_snapshot)
             return copy.deepcopy(self.settings.get("detector", {}))
 
     def get_inference_settings(self) -> Dict[str, Any]:
         with self._file_lock:
             if self._fill_inference_defaults(self.settings, self._inference_defaults()):
                 settings_snapshot = copy.deepcopy(self.settings)
-                self._save(settings_snapshot)
+                self._repo.save(settings_snapshot)
             return copy.deepcopy(self.settings.get("inference", {}))
 
     def get_plate_size_defaults(self) -> Dict[str, Dict[str, int]]:
@@ -925,8 +812,8 @@ class SettingsManager:
         return direction_defaults()
 
     def refresh(self) -> None:
-        with self._file_lock:
-            self.settings = self._load()
+        self._repo.refresh()
+        self.settings = self._repo.settings
 
     def update_channel(self, channel_id: int, data: Dict[str, Any]) -> None:
         channels = self.get_channels()
