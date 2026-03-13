@@ -883,6 +883,47 @@ function toPercentPoint(point, cv) {
     y: Number(((y / cv.height) * 100).toFixed(3)),
   };
 }
+
+function defaultROIPointsForCanvas(cv) {
+  return [
+    { x: 0, y: 0 },
+    { x: cv.width, y: 0 },
+    { x: cv.width, y: cv.height },
+    { x: 0, y: cv.height },
+  ];
+}
+
+function pointToSegmentDistance(point, start, end) {
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  if (dx === 0 && dy === 0) {
+    return Math.hypot(point.x - start.x, point.y - start.y);
+  }
+  const t = Math.max(
+    0,
+    Math.min(1, ((point.x - start.x) * dx + (point.y - start.y) * dy) / (dx * dx + dy * dy)),
+  );
+  const projectionX = start.x + t * dx;
+  const projectionY = start.y + t * dy;
+  return Math.hypot(point.x - projectionX, point.y - projectionY);
+}
+
+function findInsertSegmentIndex(point) {
+  if (roiPoints.length < 2) return -1;
+  const threshold = 8;
+  let bestIndex = -1;
+  let bestDistance = Number.POSITIVE_INFINITY;
+  for (let i = 0; i < roiPoints.length; i += 1) {
+    const start = roiPoints[i];
+    const end = roiPoints[(i + 1) % roiPoints.length];
+    const distance = pointToSegmentDistance(point, start, end);
+    if (distance <= threshold && distance < bestDistance) {
+      bestDistance = distance;
+      bestIndex = i;
+    }
+  }
+  return bestIndex;
+}
 function drawROI() {
   const cv = document.getElementById("roiCanvas");
   const ctx = cv.getContext("2d");
@@ -912,16 +953,34 @@ function drawROI() {
     ctx.fill();
   });
 }
-function refreshROISnapshot() {
+async function refreshROISnapshot() {
   if (!selectedChannelId) return;
-  const img = new Image();
-  img.onload = () => {
-    roiBgImage = img;
-    drawROI();
-  };
-  img.src = api(
-    `/api/channels/${selectedChannelId}/snapshot.jpg?t=${Date.now()}`,
-  );
+  const channelId = selectedChannelId;
+  try {
+    const res = await fetch(
+      api(`/api/channels/${channelId}/snapshot.jpg?t=${Date.now()}`),
+      { cache: "no-store" },
+    );
+    if (!res.ok) {
+      throw new Error(`snapshot status ${res.status}`);
+    }
+    const blob = await res.blob();
+    const objectUrl = URL.createObjectURL(blob);
+    const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(objectUrl);
+      if (Number(selectedChannelId) !== Number(channelId)) return;
+      roiBgImage = img;
+      drawROI();
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      addDebug("[WARN] ROI snapshot decode failed", "warn");
+    };
+    img.src = objectUrl;
+  } catch (err) {
+    addDebug(`[WARN] ROI snapshot unavailable: ${err.message}`, "warn");
+  }
 }
 function setupROI() {
   const cv = document.getElementById("roiCanvas");
@@ -972,11 +1031,12 @@ function setupROI() {
     const nearExisting = roiPoints.findIndex(
       (p) => Math.hypot(p.x - x, p.y - y) < 10,
     );
-    if (nearExisting === -1) {
-      roiPoints.push({ x, y });
-      drawROI();
-      setVal("c_roi_points", JSON.stringify(roiPoints));
-    }
+    if (nearExisting !== -1) return;
+    const insertAfter = findInsertSegmentIndex({ x, y });
+    if (insertAfter === -1) return;
+    roiPoints.splice(insertAfter + 1, 0, { x, y });
+    drawROI();
+    setVal("c_roi_points", JSON.stringify(roiPoints));
   };
 }
 
@@ -1172,8 +1232,12 @@ async function selectChannel(id) {
   const cv = document.getElementById("roiCanvas");
   const unit = c.region?.unit || "px";
   roiPoints = (c.region?.points || []).map((p) => toCanvasPoint(p, unit, cv));
+  if (!roiPoints.length) {
+    roiPoints = defaultROIPointsForCanvas(cv);
+  }
   setVal("c_roi_points", JSON.stringify(roiPoints));
   drawROI();
+  refreshROISnapshot();
 }
 
 async function saveChannel() {
@@ -1687,12 +1751,11 @@ document.getElementById("themeToggleBtn").onclick = () => {
 };
 document.getElementById("roiRefreshBtn").onclick = refreshROISnapshot;
 document.getElementById("roiClearBtn").onclick = () => {
-  roiPoints = [];
-  setVal("c_roi_points", "[]");
+  const cv = document.getElementById("roiCanvas");
+  roiPoints = defaultROIPointsForCanvas(cv);
+  setVal("c_roi_points", JSON.stringify(roiPoints));
   drawROI();
 };
-document.getElementById("roiApplyBtn").onclick = () =>
-  setVal("c_roi_points", JSON.stringify(roiPoints));
 
 
 document.addEventListener("keydown", (event) => {
