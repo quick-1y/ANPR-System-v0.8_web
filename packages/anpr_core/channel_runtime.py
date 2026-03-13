@@ -456,7 +456,7 @@ class ChannelProcessor:
                     self._debug_registry.cleanup_stale(channel_id)
                     continue
 
-                frame = self._apply_roi_mask(frame, channel)
+                detector_frame = self._apply_roi_mask(frame, channel)
 
                 now_monotonic = read_finished_at
                 last_frame_at = now_monotonic
@@ -479,7 +479,7 @@ class ChannelProcessor:
 
                 if should_process:
                     detection_started = time.monotonic()
-                    detections = detector.track(frame)
+                    detections = detector.track(detector_frame)
                     detection_ms = (time.monotonic() - detection_started) * 1000.0
                     self._debug_registry.update_from_detections(channel_id, detections, frame_shape=frame.shape)
                     ocr_started = time.monotonic()
