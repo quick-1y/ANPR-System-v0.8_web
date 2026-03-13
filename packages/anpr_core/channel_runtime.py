@@ -293,8 +293,8 @@ class ChannelProcessor:
             except (TypeError, ValueError):
                 continue
             if unit == "percent":
-                x_value *= width
-                y_value *= height
+                x_value = (x_value * width) / 100.0
+                y_value = (y_value * height) / 100.0
             polygon_points.append([int(round(x_value)), int(round(y_value))])
 
         if len(polygon_points) < 3:
